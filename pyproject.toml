@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "kendo"
+version = "0.1.0"
+description = ""
+authors = ["Modern <ehsan@modern.inc>"]
+readme = "README.md"
+
+[tool.poetry.scripts]
+kendo = "kendo.main:app"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+snowflake-connector-python = "^3.6.0"
+python-dotenv = "^1.0.1"
+typer = {extras = ["all"], version = "^0.9.0"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
