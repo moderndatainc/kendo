@@ -2,7 +2,7 @@ import typer
 
 from .services.security_clearance import (
     show_session_details,
-    show_current_role_grants,
+    show_missing_grants as show_missing_grants_service,
     show_required_grants as show_required_grants_service,
 )
 
@@ -25,11 +25,11 @@ def session_details():
 
 
 @app.command()
-def session_role_grants():
+def show_missing_grants():
     """
-    Show Grants of Role in current session.
+    Show missing Grants of Role in current session.
     """
-    show_current_role_grants(snowflake_connection_name)
+    show_missing_grants_service(snowflake_connection_name)
 
 
 @app.command()

@@ -19,6 +19,7 @@ password = "yourpass"
 ## Usage
 
 ```
+$ poetry shell
 $ kendo --help
 $ kendo snowflake --help
 $ kendo snowflake session-details
