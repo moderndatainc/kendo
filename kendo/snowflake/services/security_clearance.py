@@ -10,6 +10,10 @@ REQUIRED_GRANTS = [
         "privilege": "MANAGE GRANTS",
         "granted_on": "ACCOUNT",
     },
+    {
+        "privilege": "USAGE",
+        "granted_on": "WAREHOUSE",
+    },
 ]
 
 

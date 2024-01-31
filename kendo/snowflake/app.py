@@ -5,6 +5,7 @@ from .services.security_clearance import (
     show_missing_grants as show_missing_grants_service,
     show_required_grants as show_required_grants_service,
 )
+from .services.configuration import setup_config_database
 
 app = typer.Typer()
 snowflake_connection_name = "default"
@@ -38,3 +39,11 @@ def show_required_grants():
     Show Grants required to operate CLI.
     """
     show_required_grants_service()
+
+
+@app.command()
+def configure():
+    """
+    Setup database and schema in Snowflake required for managing Access Control.
+    """
+    setup_config_database(snowflake_connection_name)
