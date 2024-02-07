@@ -25,3 +25,14 @@ $ kendo snowflake --help
 $ kendo snowflake session-details
 ```
 
+
+### Tags
+Create a tag with any allowed values.
+```
+$ kendo snowflake create-tag country
+```
+
+Create a tag with specific allowed values.
+```
+$ kendo snowflake create-tag country US CA 'Cayman Islands'
+```

@@ -1,4 +1,7 @@
 import typer
+from typing_extensions import Annotated
+from typing import List, Optional
+from rich import print
 
 from .services.security_clearance import (
     show_session_details,
@@ -6,6 +9,7 @@ from .services.security_clearance import (
     show_required_grants as show_required_grants_service,
 )
 from .services.configuration import setup_config_database
+from .services.tags import create_tag as create_tag_service
 
 app = typer.Typer()
 snowflake_connection_name = "default"
@@ -47,3 +51,14 @@ def configure():
     Setup database and schema in Snowflake required for managing Access Control.
     """
     setup_config_database(snowflake_connection_name)
+
+
+@app.command()
+def create_tag(
+    name: Annotated[str, typer.Argument()],
+    allowed_values: Annotated[Optional[List[str]], typer.Argument()] = None,
+):
+    """
+    Create a Tag, optionally with allowed values.
+    """
+    create_tag_service(snowflake_connection_name, name, allowed_values)

@@ -26,7 +26,12 @@ def execute(session, sql, use_role=None, use_warehouse=None, print_sql=False):
 
 
 def execute_anonymous_block(
-    session, sql, use_role=None, use_warehouse=None, print_sql=False
+    session,
+    sql_body,
+    declare_block=None,
+    use_role=None,
+    use_warehouse=None,
+    print_sql=False,
 ):
     with session.cursor(DictCursor) as cur:
         try:
@@ -34,12 +39,21 @@ def execute_anonymous_block(
                 cur.execute(f"USE ROLE {use_role}")
             if use_warehouse:
                 cur.execute(f"USE WAREHOUSE {use_warehouse}")
-            sql = (
-                """
+            sql = """
                 EXECUTE IMMEDIATE $$
+                """
+            if declare_block:
+                sql += (
+                    """
+                    DECLARE
+                    """
+                    + declare_block
+                )
+            sql += (
+                """
                 BEGIN
                 """
-                + sql
+                + sql_body
             )
             sql += """
                 END;
