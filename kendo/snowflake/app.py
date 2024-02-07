@@ -9,7 +9,7 @@ from .services.security_clearance import (
     show_required_grants as show_required_grants_service,
 )
 from .services.configuration import setup_config_database
-from .services.tags import create_tag as create_tag_service
+from .services.tags import create_tag as create_tag_service, show_tags as show_tags_service
 
 app = typer.Typer()
 snowflake_connection_name = "default"
@@ -62,3 +62,13 @@ def create_tag(
     Create a Tag, optionally with allowed values.
     """
     create_tag_service(snowflake_connection_name, name, allowed_values)
+
+
+@app.command()
+def show_tags(
+    name_like: Annotated[Optional[str], typer.Option()] = None,
+):
+    """
+    Show Tags
+    """
+    show_tags_service(snowflake_connection_name, name_like)

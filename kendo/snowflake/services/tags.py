@@ -1,5 +1,5 @@
 from typing import List, Optional
-from rich import print
+from rich import print, print_json
 import typer
 from kendo.snowflake.connection import (
     get_session,
@@ -68,4 +68,29 @@ def create_tag(
 
     print(f"Tag '{name}' created successfully.")
 
+    close_session(session)
+
+
+def show_tags(connection_name: str, name: Optional[str]):
+    session = get_session(connection_name)
+    i_select: ISelect = ISelect(
+        table="kendo_db.config.tags",
+    )
+    if name:
+        i_select.where = f"name LIKE '%{name}%'"
+
+    res = execute(session, generate_select(i_select))
+    if res and len(res) > 0:
+        for i, _ in enumerate(res):
+            tag_id = res[i]["ID"]
+            i_select = ISelect(
+                table="kendo_db.config.tags_allowed_values",
+                select=["value"],
+                where=f"tag_id = {tag_id}",
+            )
+            allowed_values = execute(session, generate_select(i_select))
+            if allowed_values:
+                res[i]["allowed_values"] = [val["VALUE"] for val in allowed_values]
+            del res[i]["ID"]
+    print_json(data=res)
     close_session(session)
