@@ -52,3 +52,8 @@ cookiecutter-pypackage-env/
 
 # IDE settings
 .vscode/
+
+
+
+# Kendo sample files
+sample/
