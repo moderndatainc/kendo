@@ -9,7 +9,10 @@ from .services.security_clearance import (
     show_missing_grants as show_missing_grants_service,
     show_required_grants as show_required_grants_service,
 )
-from .services.configuration import setup_config_database
+from .services.configuration import (
+    setup_config_database,
+    scan_infra as scan_infra_service,
+)
 from .services.tags import (
     create_tag as create_tag_service,
     show_tags as show_tags_service,
@@ -48,6 +51,14 @@ def show_required_grants():
     Show Grants required to operate CLI.
     """
     show_required_grants_service()
+
+
+@app.command()
+def scan_infra():
+    """
+    Scan Snowflake infrastructure.
+    """
+    scan_infra_service(snowflake_connection_name)
 
 
 @app.command()

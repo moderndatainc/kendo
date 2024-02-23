@@ -1,0 +1,10 @@
+{
+  "tag": "country",
+  "value": "CA",
+  "objects": [
+    {
+      "type": "table",
+      "path": "JETSKI_DEV_1.DBT_KEHSANAZIZ.CUSTOMERS"
+    }
+  ]
+}
