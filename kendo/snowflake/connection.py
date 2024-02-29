@@ -11,7 +11,13 @@ def get_session(connection_name="default"):
 
 
 def execute(
-    session, sql, parameters=None, use_role=None, use_warehouse=None, print_sql=False
+    session,
+    sql,
+    parameters=None,
+    use_role=None,
+    use_warehouse=None,
+    print_sql=False,
+    abort=True,
 ):
     with session.cursor(DictCursor) as cur:
         try:
@@ -29,7 +35,8 @@ def execute(
             return res
         except ProgrammingError as e:
             print(e)
-            raise typer.Abort()
+            if abort:
+                raise typer.Abort()
 
 
 def execute_anonymous_block(

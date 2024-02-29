@@ -54,7 +54,7 @@ def scan_infra(connection_name: str):
     session = get_session(connection_name)
 
     colored_print("Scanning Snowflake infrastructure...", level="info")
-    colored_print("Mapping databases...", level="info")
+    colored_print("Scanning databases...", level="info")
     # fetch Databases from SF
     # fetch Databases from Kendo
     # show missing and new (match by name)
@@ -73,8 +73,9 @@ def scan_infra(connection_name: str):
     )
 
     missing_dbs = []
+    temp_list = [db["name"] for db in dbs_in_sf]
     for db in dbs_in_kendo:
-        if db["NAME"] not in [db["name"] for db in dbs_in_sf]:
+        if db["NAME"] not in temp_list:
             missing_dbs.append(db)
     if missing_dbs:
         colored_print(
@@ -91,8 +92,9 @@ def scan_infra(connection_name: str):
         )
 
     new_dbs = []
+    temp_list = [db["NAME"] for db in dbs_in_kendo]
     for db in dbs_in_sf:
-        if db["name"] not in [db["NAME"] for db in dbs_in_kendo]:
+        if db["name"] not in temp_list:
             new_dbs.append(db)
     if new_dbs:
         colored_print("New databases detected since last scan.", level="info")
@@ -119,34 +121,405 @@ def scan_infra(connection_name: str):
             data = [(("TIMESTAMP_LTZ", db["created_on"]), db["name"]) for db in new_dbs]
             execute_many(session, insert_statement, data)
         colored_print("New databases mapped successfully.", level="success")
-    dbs_in_kendo = execute(
-        session,
-        generate_select(ISelect(table="kendo_db.infrastructure.database_objs")),
-    )
+        dbs_in_kendo = execute(
+            session,
+            generate_select(ISelect(table="kendo_db.infrastructure.database_objs")),
+        )
+    kendo_db_id_map = {db["ID"]: db["NAME"] for db in dbs_in_kendo}
 
+    colored_print("Scanning schemas...", level="info")
     # fetch Schemas from SF
-    # # execute(session, f"show schemas in {db['name']}")
     # attach kendo's database_id to each schema (match by catalog_name)
     # fetch Schemas from Kendo
     # show missing and new (match by name and database_id)
     # prompt to record the new ones
     # insert the new records
     # select all records and store in memory, id will be needed
+    schemas_in_sf = []
+    for db in dbs_in_kendo:
+        schemas_in_this_db = execute(session, f"show schemas in {db['NAME']}")
+        schemas_in_this_db = [
+            {
+                "name": schema["name"],
+                "created_on": schema["created_on"],
+                "database_id": db["ID"],
+                "database_name": db["NAME"],
+            }
+            for schema in schemas_in_this_db
+            if schema["name"].lower() not in exclusion_rules.get("schemas", [])
+        ]
+        schemas_in_sf.extend(schemas_in_this_db)
+    schemas_in_kendo = execute(
+        session,
+        generate_select(
+            ISelect(table="kendo_db.infrastructure.schema_objs"),
+        ),
+    )
+    schemas_in_kendo = list(
+        map(
+            lambda schema: {
+                **schema,
+                "DATABASE_NAME": kendo_db_id_map[schema["DATABASE_ID"]],
+            },
+            schemas_in_kendo,
+        )
+    )
 
+    missing_schemas = []
+    temp_list = [(schema["name"], schema["database_id"]) for schema in schemas_in_sf]
+    for schema in schemas_in_kendo:
+        if (schema["NAME"], schema["DATABASE_ID"]) not in temp_list:
+            missing_schemas.append(schema)
+    if missing_schemas:
+        colored_print(
+            "Some schemas names that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Schema mappings: ", level="info")
+            print(missing_schemas)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_schemas = []
+    temp_list = [(schema["NAME"], schema["DATABASE_ID"]) for schema in schemas_in_kendo]
+    for schema in schemas_in_sf:
+        if (schema["name"], schema["database_id"]) not in temp_list:
+            new_schemas.append(schema)
+    if new_schemas:
+        colored_print("New schemas detected since last scan.", level="info")
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Schemas: ", level="info")
+            print(new_schemas)
+        typer.confirm(
+            "Are you sure you want these new schemas names to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new schemas...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.schema_objs",
+                columns=["obj_created_on", "name", "database_id"],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", schema["created_on"]),
+                    schema["name"],
+                    schema["database_id"],
+                )
+                for schema in new_schemas
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print("New schemas mapped successfully.", level="success")
+        schemas_in_kendo = execute(
+            session,
+            generate_select(
+                ISelect(table="kendo_db.infrastructure.schema_objs"),
+            ),
+        )
+        schemas_in_kendo = list(
+            map(
+                lambda schema: {
+                    **schema,
+                    "DATABASE_NAME": kendo_db_id_map[schema["DATABASE_ID"]],
+                },
+                schemas_in_kendo,
+            )
+        )
+    kendo_schema_id_map = {
+        schema["ID"]: {"name": schema["NAME"], "database_id": schema["DATABASE_ID"]}
+        for schema in schemas_in_kendo
+    }
+
+    colored_print("Scanning tables...", level="info")
     # fetch Tables from SF
-    # # execute(session, f"show tables in {db['name']}.{schema['name']}")
     # attach kendo's schema_id to each Table (match by table_schema, table_catalog)
     # fetch Tables from Kendo
     # show missing and new (match by name and schema_id)
     # prompt to record the new ones
     # insert the new records
     # select all records and store in memory, id will be needed
+    tables_in_sf = []
+    for schema in schemas_in_kendo:
+        tables_in_this_schema = execute(
+            session, f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}"
+        )
+        tables_in_this_schema = [
+            {
+                "name": table["name"],
+                "created_on": table["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],
+            }
+            for table in tables_in_this_schema
+        ]
+        tables_in_sf.extend(tables_in_this_schema)
+    tables_in_kendo = execute(
+        session,
+        generate_select(
+            ISelect(table="kendo_db.infrastructure.table_objs"),
+        ),
+    )
+    tables_in_kendo = list(
+        map(
+            lambda table: {
+                **table,
+                "SCHEMA_NAME": kendo_schema_id_map[table["SCHEMA_ID"]]["name"],
+                "DATABASE_ID": kendo_schema_id_map[table["SCHEMA_ID"]]["database_id"],
+                "DATABASE_NAME": kendo_db_id_map[
+                    kendo_schema_id_map[table["SCHEMA_ID"]]["database_id"]
+                ],
+            },
+            tables_in_kendo,
+        ),
+    )
 
+    missing_tables = []
+    temp_list = [(table["name"], table["schema_id"]) for table in tables_in_sf]
+    for table in tables_in_kendo:
+        if (table["NAME"], table["SCHEMA_ID"]) not in temp_list:
+            missing_tables.append(table)
+    if missing_tables:
+        colored_print(
+            "Some tables names that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Table mappings: ", level="info")
+            print(missing_tables)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_tables = []
+    temp_list = [(table["NAME"], table["SCHEMA_ID"]) for table in tables_in_kendo]
+    for table in tables_in_sf:
+        if (table["name"], table["schema_id"]) not in temp_list:
+            new_tables.append(table)
+    if new_tables:
+        colored_print("New tables detected since last scan.", level="info")
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Tables: ", level="info")
+            print(new_tables)
+        typer.confirm(
+            "Are you sure you want these new tables names to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new tables...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.table_objs",
+                columns=["obj_created_on", "name", "schema_id"],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", table["created_on"]),
+                    table["name"],
+                    table["schema_id"],
+                )
+                for table in new_tables
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print("New tables mapped successfully.", level="success")
+        tables_in_kendo = execute(
+            session,
+            generate_select(
+                ISelect(table="kendo_db.infrastructure.table_objs"),
+            ),
+        )
+        tables_in_kendo = list(
+            map(
+                lambda table: {
+                    **table,
+                    "SCHEMA_NAME": kendo_schema_id_map[table["SCHEMA_ID"]]["name"],
+                    "DATABASE_ID": kendo_schema_id_map[table["SCHEMA_ID"]][
+                        "database_id"
+                    ],
+                    "DATABASE_NAME": kendo_db_id_map[
+                        kendo_schema_id_map[table["SCHEMA_ID"]]["database_id"]
+                    ],
+                },
+                tables_in_kendo,
+            ),
+        )
+    kendo_table_id_map = {
+        table["ID"]: {
+            "name": table["NAME"],
+            "schema_id": table["SCHEMA_ID"],
+            "database_id": table["DATABASE_ID"],
+        }
+        for table in tables_in_kendo
+    }
+
+    colored_print("Scanning columns...", level="info")
     # fetch Columns from SF
     # attach kendo's table_id to each Column (match by table_name, table_schema, table_catalog)
     # fetch Columns from Kendo
     # show missing and new (match by name and table_id)
     # prompt to record the new ones
     # insert the new records
+    # select all records and store in memory, id will be needed
+    columns_in_sf = []
+    skipped_tables = []
+    for table in tables_in_kendo:
+        columns_in_this_table = execute(
+            session,
+            f"show columns in {table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",
+            abort=False,
+        )
+        if not columns_in_this_table:
+            skipped_tables.append(
+                f"{table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}"
+            )
+            continue
+        columns_in_this_table = [
+            {
+                "name": column["column_name"],
+                "created_on": None,
+                "table_id": table["ID"],
+                "table_name": table["NAME"],
+                "schema_id": table["SCHEMA_ID"],
+                "schema_name": table["SCHEMA_NAME"],
+                "database_id": table["DATABASE_ID"],
+                "database_name": table["DATABASE_NAME"],
+            }
+            for column in columns_in_this_table
+        ]
+        columns_in_sf.extend(columns_in_this_table)
+    if skipped_tables:
+        colored_print(
+            "Some tables were skipped because they could not be scanned.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped Tables: ", level="info")
+            print(skipped_tables)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding these tables?",
+            abort=True,
+        )
+    columns_in_kendo = execute(
+        session,
+        generate_select(
+            ISelect(table="kendo_db.infrastructure.column_objs"),
+        ),
+    )
+    columns_in_kendo = list(
+        map(
+            lambda column: {
+                **column,
+                "TABLE_NAME": kendo_table_id_map[column["TABLE_ID"]]["name"],
+                "SCHEMA_ID": kendo_table_id_map[column["TABLE_ID"]]["schema_id"],
+                "SCHEMA_NAME": kendo_schema_id_map[
+                    kendo_table_id_map[column["TABLE_ID"]]["schema_id"]
+                ]["name"],
+                "DATABASE_ID": kendo_table_id_map[column["TABLE_ID"]]["database_id"],
+                "DATABASE_NAME": kendo_db_id_map[
+                    kendo_table_id_map[column["TABLE_ID"]]["database_id"]
+                ],
+            },
+            columns_in_kendo,
+        ),
+    )
+
+    missing_columns = []
+    temp_list = [(column["name"], column["table_id"]) for column in columns_in_sf]
+    for column in columns_in_kendo:
+        if (column["NAME"], column["TABLE_ID"]) not in temp_list:
+            missing_columns.append(column)
+    if missing_columns:
+        colored_print(
+            "Some columns names that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Column mappings: ", level="info")
+            print(missing_columns)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_columns = []
+    temp_list = [(column["NAME"], column["TABLE_ID"]) for column in columns_in_kendo]
+    for column in columns_in_sf:
+        if (column["name"], column["table_id"]) not in temp_list:
+            new_columns.append(column)
+    if new_columns:
+        colored_print("New columns detected since last scan.", level="info")
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Columns: ", level="info")
+            print(new_columns)
+        typer.confirm(
+            "Are you sure you want these new columns names to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new columns...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.column_objs",
+                columns=["name", "table_id"],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    column["name"],
+                    column["table_id"],
+                )
+                for column in new_columns
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print("New columns mapped successfully.", level="success")
+        columns_in_kendo = execute(
+            session,
+            generate_select(
+                ISelect(table="kendo_db.infrastructure.column_objs"),
+            ),
+        )
+        columns_in_kendo = list(
+            map(
+                lambda column: {
+                    **column,
+                    "TABLE_NAME": kendo_table_id_map[column["TABLE_ID"]]["name"],
+                    "SCHEMA_ID": kendo_table_id_map[column["TABLE_ID"]]["schema_id"],
+                    "SCHEMA_NAME": kendo_schema_id_map[
+                        kendo_table_id_map[column["TABLE_ID"]]["schema_id"]
+                    ]["name"],
+                    "DATABASE_ID": kendo_table_id_map[column["TABLE_ID"]][
+                        "database_id"
+                    ],
+                    "DATABASE_NAME": kendo_db_id_map[
+                        kendo_table_id_map[column["TABLE_ID"]]["database_id"]
+                    ],
+                },
+                columns_in_kendo,
+            ),
+        )
 
     close_session(session)
