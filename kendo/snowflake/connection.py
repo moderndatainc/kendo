@@ -3,6 +3,8 @@ import snowflake.connector
 from snowflake.connector import connect, DictCursor
 from snowflake.connector.errors import ProgrammingError
 
+from kendo.snowflake.schemas.common import ICaughtException
+
 snowflake.connector.paramstyle = "qmark"
 
 
@@ -17,7 +19,7 @@ def execute(
     use_role=None,
     use_warehouse=None,
     print_sql=False,
-    abort=True,
+    abort_on_exception=True,
 ):
     with session.cursor(DictCursor) as cur:
         try:
@@ -34,9 +36,11 @@ def execute(
             # print(json.dumps(res, indent=4, sort_keys=True, default=str))
             return res
         except ProgrammingError as e:
-            print(e)
-            if abort:
+            if abort_on_exception:
+                print(e)
                 raise typer.Abort()
+            else:
+                return ICaughtException(message=str(e))
 
 
 def execute_anonymous_block(

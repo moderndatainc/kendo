@@ -29,6 +29,14 @@ def callback(connection_name: str = "default"):
     snowflake_connection_name = connection_name
 
 
+# @app.command()
+# def develop():
+#     """
+#     Developer command.
+#     """
+#     print("Hello World!")
+
+
 @app.command()
 def session_details():
     """
@@ -85,7 +93,7 @@ def show_tags(
     name_like: Annotated[Optional[str], typer.Option()] = None,
 ):
     """
-    Show Tags
+    Show Tags.
     """
     show_tags_service(snowflake_connection_name, name_like)
 
@@ -95,6 +103,6 @@ def set_tag(
     file_path: Annotated[Path, typer.Argument()],
 ):
     """
-    Set Tag to objects
+    Set Tag to objects.
     """
     set_tag_service(snowflake_connection_name, file_path)

@@ -8,6 +8,7 @@ from kendo.snowflake.connection import (
     execute,
     execute_many,
 )
+from kendo.snowflake.schemas.common import ICaughtException
 from kendo.snowflake.utils.constants import ANONYMOUS_BLOCK, COMPLETED
 from kendo.snowflake.ddl.config.v1 import SQL as config_v1_sql
 from kendo.snowflake.utils.crud import (
@@ -136,8 +137,20 @@ def scan_infra(connection_name: str):
     # insert the new records
     # select all records and store in memory, id will be needed
     schemas_in_sf = []
+    skipped_dbs = []
     for db in dbs_in_kendo:
-        schemas_in_this_db = execute(session, f"show schemas in {db['NAME']}")
+        schemas_in_this_db = execute(
+            session, f"show schemas in {db['NAME']}", abort_on_exception=False
+        )
+        if isinstance(schemas_in_this_db, ICaughtException):
+            skipped_dbs.append(
+                {
+                    "obj": db["NAME"],
+                    "type": "database",
+                    "error": schemas_in_this_db.message,
+                }
+            )
+            continue
         schemas_in_this_db = [
             {
                 "name": schema["name"],
@@ -149,6 +162,19 @@ def scan_infra(connection_name: str):
             if schema["name"].lower() not in exclusion_rules.get("schemas", [])
         ]
         schemas_in_sf.extend(schemas_in_this_db)
+    if skipped_dbs:
+        colored_print(
+            "Schemas could not be scanned from some databases.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_dbs)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding schemas from these databases?",
+            abort=True,
+        )
     schemas_in_kendo = execute(
         session,
         generate_select(
@@ -249,10 +275,22 @@ def scan_infra(connection_name: str):
     # insert the new records
     # select all records and store in memory, id will be needed
     tables_in_sf = []
+    skipped_schemas = []
     for schema in schemas_in_kendo:
         tables_in_this_schema = execute(
-            session, f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}"
+            session,
+            f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}",
+            abort_on_exception=False,
         )
+        if isinstance(tables_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",
+                    "type": "schema",
+                    "error": tables_in_this_schema.message,
+                }
+            )
+            continue
         tables_in_this_schema = [
             {
                 "name": table["name"],
@@ -265,6 +303,19 @@ def scan_infra(connection_name: str):
             for table in tables_in_this_schema
         ]
         tables_in_sf.extend(tables_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Tables could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding tables from these schemas?",
+            abort=True,
+        )
     tables_in_kendo = execute(
         session,
         generate_select(
@@ -384,11 +435,15 @@ def scan_infra(connection_name: str):
         columns_in_this_table = execute(
             session,
             f"show columns in {table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",
-            abort=False,
+            abort_on_exception=False,
         )
-        if not columns_in_this_table:
+        if isinstance(columns_in_this_table, ICaughtException):
             skipped_tables.append(
-                f"{table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}"
+                {
+                    "obj": f"{table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",
+                    "type": "table",
+                    "error": columns_in_this_table.message,
+                }
             )
             continue
         columns_in_this_table = [
@@ -407,15 +462,15 @@ def scan_infra(connection_name: str):
         columns_in_sf.extend(columns_in_this_table)
     if skipped_tables:
         colored_print(
-            "Some tables were skipped because they could not be scanned.",
+            "Columns could not be scanned from some tables.",
             level="warning",
         )
         confirm = typer.confirm("View?")
         if confirm:
-            colored_print("Skipped Tables: ", level="info")
+            colored_print("Skipped: ", level="info")
             print(skipped_tables)
         typer.confirm(
-            "Do you want to proceed with mapping excluding these tables?",
+            "Do you want to proceed with mapping excluding columns from these tables?",
             abort=True,
         )
     columns_in_kendo = execute(
