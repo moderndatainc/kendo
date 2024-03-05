@@ -22,6 +22,15 @@ from kendo.snowflake.utils.rich import colored_print
 exclusion_rules = {
     "databases": ["snowflake", "snowflake_sample_data", "kendo_db"],
     "schemas": ["information_schema"],
+    "roles": [
+        "orgadmin",
+        "accountadmin",
+        "securityadmin",
+        "sysadmin",
+        "useradmin",
+        "kendoadmin",
+        "public",
+    ],
 }
 
 
@@ -55,6 +64,83 @@ def scan_infra(connection_name: str):
     session = get_session(connection_name)
 
     colored_print("Scanning Snowflake infrastructure...", level="info")
+    colored_print("Scanning roles...", level="info")
+    # fetch Roles from SF
+    # fetch Roles from Kendo
+    # show missing and new (match by name)
+    # prompt to record the new ones
+    # insert the new records
+    roles_in_sf = execute(session, f"show roles")
+    roles_in_sf = [
+        {"name": role["name"], "created_on": role["created_on"]}
+        for role in roles_in_sf
+        if role["name"].lower() not in exclusion_rules.get("roles", [])
+    ]
+    roles_in_kendo = execute(
+        session,
+        generate_select(ISelect(table="kendo_db.infrastructure.role_objs")),
+    )
+
+    missing_roles = []
+    temp_list = [role["name"] for role in roles_in_sf]
+    for role in roles_in_kendo:
+        if role["NAME"] not in temp_list:
+            missing_roles.append(role)
+    if missing_roles:
+        colored_print(
+            "Some roles names that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Role mappings: ", level="info")
+            print(missing_roles)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_roles = []
+    temp_list = [role["NAME"] for role in roles_in_kendo]
+    for role in roles_in_sf:
+        if role["name"] not in temp_list:
+            new_roles.append(role)
+    if new_roles:
+        colored_print("New roles detected since last scan.", level="info")
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Roles: ", level="info")
+            print(new_roles)
+        typer.confirm(
+            "Are you sure you want these new roles names to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new roles...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.role_objs",
+                columns=["obj_created_on", "name"],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", role["created_on"]),
+                    role["name"],
+                )
+                for role in new_roles
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print("New roles mapped successfully.", level="success")
+        roles_in_kendo = execute(
+            session,
+            generate_select(ISelect(table="kendo_db.infrastructure.role_objs")),
+        )
+    kendo_role_id_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}
+
     colored_print("Scanning databases...", level="info")
     # fetch Databases from SF
     # fetch Databases from Kendo
