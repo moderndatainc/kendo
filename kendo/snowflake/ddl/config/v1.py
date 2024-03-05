@@ -25,6 +25,16 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.role_objs (
     obj_created_on TIMESTAMP_LTZ NULL,
     name VARCHAR NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grant_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    privilege VARCHAR NOT NULL,
+    granted_on VARCHAR NOT NULL,
+    granted_on_id INT NOT NULL,
+    granted_to VARCHAR NOT NULL,
+    granted_to_id INT NOT NULL,
+    grant_option BOOLEAN NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.database_objs (
     id INT PRIMARY KEY AUTOINCREMENT,
     obj_created_on TIMESTAMP_LTZ NULL,
