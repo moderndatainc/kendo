@@ -617,9 +617,7 @@ def scan_infra(connection_name: str):
     # insert the new records
     roles_in_sf = execute(session, f"show roles")
     roles_in_sf = [
-        {"name": role["name"], "created_on": role["created_on"]}
-        for role in roles_in_sf
-        if role["name"].lower() not in exclusion_rules.get("roles", [])
+        {"name": role["name"], "created_on": role["created_on"]} for role in roles_in_sf
     ]
     roles_in_kendo = execute(
         session,
@@ -633,7 +631,7 @@ def scan_infra(connection_name: str):
             missing_roles.append(role)
     if missing_roles:
         colored_print(
-            "Some roles names that were mapped earlier could not be found.",
+            f"{len(missing_roles)} roles names that were mapped earlier could not be found.",
             level="warning",
         )
         confirm = typer.confirm("View?")
@@ -651,7 +649,9 @@ def scan_infra(connection_name: str):
         if role["name"] not in temp_list:
             new_roles.append(role)
     if new_roles:
-        colored_print("New roles detected since last scan.", level="info")
+        colored_print(
+            f"{len(new_roles)} new roles detected since last scan.", level="info"
+        )
         confirm = typer.confirm("View?")
         if confirm:
             colored_print("New Roles: ", level="info")
@@ -679,14 +679,127 @@ def scan_infra(connection_name: str):
                 for role in new_roles
             ]
             execute_many(session, insert_statement, data)
-        colored_print("New roles mapped successfully.", level="success")
+        colored_print(
+            f"{len(new_roles)} new roles mapped successfully.", level="success"
+        )
         roles_in_kendo = execute(
             session,
             generate_select(ISelect(table="kendo_db.infrastructure.role_objs")),
         )
-    kendo_role_id_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}
+    kendo_role_id_key_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}
+    kendo_role_name_key_map = {role["NAME"]: role["ID"] for role in roles_in_kendo}
 
-    colored_print("Scanning grants to roles...", level="info")
+    colored_print("Scanning users...", level="info")
+    # fetch Users from SF
+    # fetch Users from Kendo
+    # show missing and new (match by name)
+    # prompt to record the new ones
+    users_in_sf = execute(session, f"show users")
+    users_in_sf = [
+        {
+            "login_name": user["login_name"],
+            "created_on": user["created_on"],
+            "last_success_login": user["last_success_login"],
+            "email": user["email"],
+            "owner": user["owner"],
+            "owner_role_id": (
+                kendo_role_name_key_map[user["owner"]] if user["owner"] else None
+            ),
+            "default_role": user["default_role"],
+            "default_role_id": (
+                kendo_role_name_key_map[user["default_role"]]
+                if user["default_role"]
+                else None
+            ),
+            "ext_authn_uid": user["ext_authn_uid"],
+        }
+        for user in users_in_sf
+    ]
+    users_in_kendo = execute(
+        session,
+        generate_select(ISelect(table="kendo_db.infrastructure.user_objs")),
+    )
+    missing_users = []
+    temp_list = [user["login_name"] for user in users_in_sf]
+    for user in users_in_kendo:
+        if user["LOGIN_NAME"] not in temp_list:
+            missing_users.append(user)
+    if missing_users:
+        colored_print(
+            f"{len(missing_users)} users names that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing User mappings: ", level="info")
+            print(missing_users)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_users = []
+    temp_list = [user["LOGIN_NAME"] for user in users_in_kendo]
+    for user in users_in_sf:
+        if user["login_name"] not in temp_list:
+            new_users.append(user)
+    if new_users:
+        colored_print(
+            f"{len(new_users)} new users detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Users: ", level="info")
+            print(new_users)
+        typer.confirm(
+            "Are you sure you want these new users names to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new users...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.user_objs",
+                columns=[
+                    "obj_created_on",
+                    "login_name",
+                    "last_success_login",
+                    "email",
+                    "owner_role_id",
+                    "default_role_id",
+                    "ext_authn_uid",
+                ],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", user["created_on"]),
+                    user["login_name"],
+                    ("TIMESTAMP_LTZ", user["last_success_login"]),
+                    user["email"],
+                    user["owner_role_id"],
+                    user["default_role_id"],
+                    user["ext_authn_uid"],
+                )
+                for user in new_users
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print(
+            f"{len(new_users)} new users mapped successfully.", level="success"
+        )
+        users_in_kendo = execute(
+            session,
+            generate_select(ISelect(table="kendo_db.infrastructure.user_objs")),
+        )
+    kendo_user_id_key_map = {user["ID"]: user["LOGIN_NAME"] for user in users_in_kendo}
+    kendo_user_name_key_map = {
+        user["LOGIN_NAME"]: user["ID"] for user in users_in_kendo
+    }
+
+    colored_print("Scanning privilege grants to roles...", level="info")
     # create new map for database, schema, table with name as key
     # fetch grants from sf
     # print the object types on which grants were skipped
@@ -729,29 +842,29 @@ def scan_infra(connection_name: str):
         "SCHEMA": kendo_schema_id_key_full_name_map,
         "TABLE": kendo_table_id_key_full_name_map,
     }
-    grants_in_sf = []
-    skipped_grants_on = set()
+    privilege_grants_in_sf = []
+    skipped_privilege_grants_on = set()
     for role in roles_in_kendo:
+        if role["NAME"].lower() in exclusion_rules.get("roles", []):
+            # skipping grants to internal roles
+            continue
+
         grants_of_this_role = execute(
             session,
             f"show grants to role {role['NAME']}",
         )
-        # grants_of_this_role = [
-        #     {
-        #         "created_on": grant["created_on"],
-        #         "privilege": grant["privilege"],
-        #         "granted_on": grant["granted_on"],
-        #         "granted_on_id": kendo_name_key_map[grant["granted_on"]][grant["name"]],
-        #         "granted_to": "ROLE",
-        #         "granted_to_id": role["ID"],
-        #         "grant_option": grant["grant_option"],
-        #     }
-        #     for grant in grants_of_this_role
-        #     if grant["granted_on"] in ["DATABASE", "SCHEMA", "TABLE"]
-        # ]
         temp_list = []
         for grant in grants_of_this_role:
             if grant["granted_on"] in ["DATABASE", "SCHEMA", "TABLE"]:
+                if (
+                    grant["granted_on"] == "DATABASE"
+                    and grant["name"] in exclusion_rules.get("databases", [])
+                ) or (
+                    grant["granted_on"] == "SCHEMA"
+                    and grant["name"] in exclusion_rules.get("schemas", [])
+                ):
+                    # skipping grants on excluded objects
+                    continue
                 temp_list.append(
                     {
                         "created_on": grant["created_on"],
@@ -768,33 +881,34 @@ def scan_infra(connection_name: str):
                     }
                 )
             else:
-                skipped_grants_on.add(grant["granted_on"])
-        grants_in_sf.extend(temp_list)
-    if len(skipped_grants_on) > 0:
+                skipped_privilege_grants_on.add(grant["granted_on"])
+        privilege_grants_in_sf.extend(temp_list)
+    if len(skipped_privilege_grants_on) > 0:
         colored_print(
-            "Grants on the following types of objects were skipped.",
+            "Privilege grants on the following types of objects were skipped.",
             level="warning",
         )
-        print(skipped_grants_on)
-    grants_in_kendo = execute(
+        print(skipped_privilege_grants_on)
+    privilege_grants_in_kendo = execute(
         session,
         generate_select(
-            ISelect(table="kendo_db.infrastructure.grant_objs"),
+            ISelect(table="kendo_db.infrastructure.grants_privilege_objs"),
         ),
     )
-    grants_in_kendo = list(
+    privilege_grants_in_kendo = list(
         map(
             lambda grant: {
                 **grant,
                 "GRANTED_ON_NAME": kendo_granted_on_obj_id_key_map[grant["GRANTED_ON"]][
                     grant["GRANTED_ON_ID"]
                 ],
-                "GRANTED_TO_NAME": kendo_role_id_map[grant["GRANTED_TO_ID"]],
+                "GRANTED_TO_NAME": kendo_role_id_key_map[grant["GRANTED_TO_ID"]],
             },
-            grants_in_kendo,
+            privilege_grants_in_kendo,
         ),
     )
     missing_grants = []
+    # matching by booleans like grant["grant_option"] doesn't work
     temp_list = [
         (
             grant["privilege"],
@@ -803,9 +917,9 @@ def scan_infra(connection_name: str):
             grant["granted_to"],
             grant["granted_to_id"],
         )
-        for grant in grants_in_sf
+        for grant in privilege_grants_in_sf
     ]
-    for grant in grants_in_kendo:
+    for grant in privilege_grants_in_kendo:
         if (
             grant["PRIVILEGE"],
             grant["GRANTED_ON"],
@@ -816,12 +930,12 @@ def scan_infra(connection_name: str):
             missing_grants.append(grant)
     if missing_grants:
         colored_print(
-            f"{len(missing_grants)} grant(s) that were mapped earlier could not be found.",
+            f"{len(missing_grants)} privilege grant(s) that were mapped earlier could not be found.",
             level="warning",
         )
         confirm = typer.confirm("View?")
         if confirm:
-            colored_print("Missing Grant mappings: ", level="info")
+            colored_print("Missing Privilege Grant mappings: ", level="info")
             print(missing_grants)
         typer.confirm(
             "Do you want to proceed without fixing these mappings yourself?",
@@ -837,9 +951,9 @@ def scan_infra(connection_name: str):
             grant["GRANTED_TO"],
             grant["GRANTED_TO_ID"],
         )
-        for grant in grants_in_kendo
+        for grant in privilege_grants_in_kendo
     ]
-    for grant in grants_in_sf:
+    for grant in privilege_grants_in_sf:
         if (
             grant["privilege"],
             grant["granted_on"],
@@ -850,14 +964,15 @@ def scan_infra(connection_name: str):
             new_grants.append(grant)
     if new_grants:
         colored_print(
-            f"{len(new_grants)} new grant(s) detected since last scan.", level="info"
+            f"{len(new_grants)} new privilege grant(s) detected since last scan.",
+            level="info",
         )
         confirm = typer.confirm("View?")
         if confirm:
             colored_print("New Grants: ", level="info")
             print(new_grants)
         typer.confirm(
-            "Are you sure you want these new grants to be mapped?",
+            "Are you sure you want these new privilege grants to be mapped?",
             abort=True,
         )
         with Progress(
@@ -865,9 +980,9 @@ def scan_infra(connection_name: str):
             TextColumn("[progress.description]{task.description}"),
             # transient=True,
         ) as progress:
-            progress.add_task(description="Mapping new grants...", total=None)
+            progress.add_task(description="Mapping new privilege grants...", total=None)
             i_insert = IInsertV2(
-                table="kendo_db.infrastructure.grant_objs",
+                table="kendo_db.infrastructure.grants_privilege_objs",
                 columns=[
                     "obj_created_on",
                     "privilege",
@@ -893,7 +1008,146 @@ def scan_infra(connection_name: str):
             ]
             execute_many(session, insert_statement, data)
         colored_print(
-            f"{len(new_grants)} new grant(s) mapped successfully.", level="success"
+            f"{len(new_grants)} new privilege grant(s) mapped successfully.",
+            level="success",
+        )
+
+    colored_print("Scanning role grants to users...", level="info")
+    # fetch grants from sf
+    # fetch grants from kendo
+    # show missing and new
+    # prompt to record the new ones
+    role_grants_in_sf = []
+    for user in users_in_kendo:
+        grants_of_this_user = execute(
+            session,
+            f"show grants to user {user['LOGIN_NAME']}",
+        )
+        grants_of_this_user = [
+            {
+                "created_on": grant["created_on"],
+                "role": grant["role"],
+                "role_id": kendo_role_name_key_map[grant["role"]],
+                "granted_to": grant["granted_to"],
+                "grantee_name": grant["grantee_name"],
+                "granted_to_id": kendo_user_name_key_map[grant["grantee_name"]],
+                "granted_by": grant["granted_by"],
+                "granted_by_role_id": (
+                    kendo_role_name_key_map[grant["granted_by"]]
+                    if grant["granted_by"]
+                    else None
+                ),
+            }
+            for grant in grants_of_this_user
+        ]
+        role_grants_in_sf.extend(grants_of_this_user)
+    role_grants_in_kendo = execute(
+        session,
+        generate_select(
+            ISelect(table="kendo_db.infrastructure.grants_role_objs"),
+        ),
+    )
+    role_grants_in_kendo = list(
+        map(
+            lambda grant: {
+                **grant,
+                "ROLE": kendo_role_id_key_map[grant["ROLE_ID"]],
+                "GRANTEE_NAME": kendo_user_id_key_map[grant["GRANTED_TO_ID"]],
+                "GRANTED_BY": (
+                    kendo_role_id_key_map[grant["GRANTED_BY_ROLE_ID"]]
+                    if grant["GRANTED_BY_ROLE_ID"]
+                    else None
+                ),
+            },
+            role_grants_in_kendo,
+        ),
+    )
+    missing_role_grants = []
+    temp_list = [
+        (
+            grant["role"],
+            grant["grantee_name"],
+        )
+        for grant in role_grants_in_sf
+    ]
+    for grant in role_grants_in_kendo:
+        if (
+            grant["ROLE"],
+            grant["GRANTEE_NAME"],
+        ) not in temp_list:
+            missing_role_grants.append(grant)
+    if missing_role_grants:
+        colored_print(
+            f"{len(missing_role_grants)} role grant(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Role Grant mappings: ", level="info")
+            print(missing_role_grants)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_role_grants = []
+    temp_list = [
+        (
+            grant["ROLE"],
+            grant["GRANTEE_NAME"],
+        )
+        for grant in role_grants_in_kendo
+    ]
+    for grant in role_grants_in_sf:
+        if (
+            grant["role"],
+            grant["grantee_name"],
+        ) not in temp_list:
+            new_role_grants.append(grant)
+    if new_role_grants:
+        colored_print(
+            f"{len(new_role_grants)} new role grant(s) detected since last scan.",
+            level="info",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Role Grants: ", level="info")
+            print(new_role_grants)
+        typer.confirm(
+            "Are you sure you want these new role grants to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new role grants...", total=None)
+            i_insert = IInsertV2(
+                table="kendo_db.infrastructure.grants_role_objs",
+                columns=[
+                    "obj_created_on",
+                    "role_id",
+                    "granted_to",
+                    "granted_to_id",
+                    "granted_by_role_id",
+                ],
+            )
+            insert_statement = generate_insert_v2(i_insert)
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", grant["created_on"]),
+                    grant["role_id"],
+                    grant["granted_to"],
+                    grant["granted_to_id"],
+                    grant["granted_by_role_id"],
+                )
+                for grant in new_role_grants
+            ]
+            execute_many(session, insert_statement, data)
+        colored_print(
+            f"{len(new_role_grants)} new role grant(s) mapped successfully.",
+            level="success",
         )
 
     close_session(session)

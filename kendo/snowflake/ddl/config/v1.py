@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.role_objs (
     obj_created_on TIMESTAMP_LTZ NULL,
     name VARCHAR NOT NULL
 );
-CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grant_objs (
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_privilege_objs (
     id INT PRIMARY KEY AUTOINCREMENT,
     obj_created_on TIMESTAMP_LTZ NULL,
     privilege VARCHAR NOT NULL,
@@ -60,5 +60,23 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.column_objs (
     name VARCHAR NOT NULL,
     table_id INT NOT NULL,
     FOREIGN KEY (table_id) REFERENCES kendo_db.infrastructure.table_objs(id)
+);
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.user_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    last_success_login TIMESTAMP_LTZ NULL,
+    login_name VARCHAR NOT NULL,
+    owner_role_id INT NULL,
+    email VARCHAR NULL,
+    default_role_id INT NULL,
+    ext_authn_uid VARCHAR NULL
+);
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_role_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    role_id INT NOT NULL,
+    granted_to VARCHAR NOT NULL,
+    granted_to_id INT NOT NULL,
+    granted_by_role_id INT NULL
 );
 """

@@ -50,3 +50,9 @@ def show_missing_grants(connection_name: str):
 
 def show_required_grants():
     print(REQUIRED_GRANTS)
+
+
+def permit_account_usage_views(connection_name: str):
+    session = get_session(connection_name)
+
+    close_session(session)
