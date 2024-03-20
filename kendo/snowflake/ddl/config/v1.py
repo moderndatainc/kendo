@@ -20,21 +20,6 @@ CREATE TABLE IF NOT EXISTS kendo_db.config.tags_assignments (
     FOREIGN KEY (tag_id) REFERENCES kendo_db.config.tags(id)
 );
 CREATE SCHEMA IF NOT EXISTS kendo_db.infrastructure;
-CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.role_objs (
-    id INT PRIMARY KEY AUTOINCREMENT,
-    obj_created_on TIMESTAMP_LTZ NULL,
-    name VARCHAR NOT NULL
-);
-CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_privilege_objs (
-    id INT PRIMARY KEY AUTOINCREMENT,
-    obj_created_on TIMESTAMP_LTZ NULL,
-    privilege VARCHAR NOT NULL,
-    granted_on VARCHAR NOT NULL,
-    granted_on_id INT NOT NULL,
-    granted_to VARCHAR NOT NULL,
-    granted_to_id INT NOT NULL,
-    grant_option BOOLEAN NOT NULL
-);
 CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.database_objs (
     id INT PRIMARY KEY AUTOINCREMENT,
     obj_created_on TIMESTAMP_LTZ NULL,
@@ -61,6 +46,11 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.column_objs (
     table_id INT NOT NULL,
     FOREIGN KEY (table_id) REFERENCES kendo_db.infrastructure.table_objs(id)
 );
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.role_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    name VARCHAR NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.user_objs (
     id INT PRIMARY KEY AUTOINCREMENT,
     obj_created_on TIMESTAMP_LTZ NULL,
@@ -69,7 +59,18 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.user_objs (
     owner_role_id INT NULL,
     email VARCHAR NULL,
     default_role_id INT NULL,
-    ext_authn_uid VARCHAR NULL
+    ext_authn_uid VARCHAR NULL,
+    is_ext_authn_duo BOOLEAN NULL
+);
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_privilege_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    privilege VARCHAR NOT NULL,
+    granted_on VARCHAR NOT NULL,
+    granted_on_id INT NOT NULL,
+    granted_to VARCHAR NOT NULL,
+    granted_to_id INT NOT NULL,
+    grant_option BOOLEAN NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_role_objs (
     id INT PRIMARY KEY AUTOINCREMENT,

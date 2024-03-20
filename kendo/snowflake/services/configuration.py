@@ -37,11 +37,22 @@ exclusion_rules = {
 def setup_config_database(connection_name: str):
     session = get_session(connection_name)
 
+    # check if user has SYSADMIN
+    role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
+    ROLE_SYSADMIN = ""
+    for i, grant in enumerate(role_grant_check):
+        if grant["role"] == "SYSADMIN":
+            ROLE_SYSADMIN = "SYSADMIN"
+            break
+    if not ROLE_SYSADMIN:
+        print("User does not have SYSADMIN role. Aborting...")
+        raise typer.Abort()
+
     # body
     sql_statments = """
         USE ROLE {role};
     """.format(
-        role=session.role,
+        role=ROLE_SYSADMIN,
     )
     sql_statments += config_v1_sql
     sql_statments += """
@@ -62,6 +73,22 @@ def setup_config_database(connection_name: str):
 
 def scan_infra(connection_name: str):
     session = get_session(connection_name)
+
+    # check if user has SYSADMIN
+    role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
+    ROLE_SYSADMIN = ""
+    ROLE_SECURITYADMIN = ""
+    for i, grant in enumerate(role_grant_check):
+        if grant["role"] == "SYSADMIN":
+            ROLE_SYSADMIN = "SYSADMIN"
+        if grant["role"] == "SECURITYADMIN":
+            ROLE_SECURITYADMIN = "SECURITYADMIN"
+    if not ROLE_SYSADMIN:
+        print("User does not have SYSADMIN role. Aborting...")
+        raise typer.Abort()
+    if not ROLE_SECURITYADMIN:
+        print("User does not have SECURITYADMIN role. Aborting...")
+        raise typer.Abort()
 
     colored_print("Scanning Snowflake infrastructure...", level="info")
     colored_print("Scanning databases...", level="info")
@@ -132,7 +159,7 @@ def scan_infra(connection_name: str):
             insert_statement = generate_insert_v2(i_insert)
             # db["created_on"].strftime("%Y-%m-%d %H:%M:%S.%f")
             data = [(("TIMESTAMP_LTZ", db["created_on"]), db["name"]) for db in new_dbs]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_dbs)} new database(s) mapped successfully.", level="success"
         )
@@ -260,7 +287,7 @@ def scan_infra(connection_name: str):
                 )
                 for schema in new_schemas
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_schemas)} new schema(s) mapped successfully.", level="success"
         )
@@ -411,7 +438,7 @@ def scan_infra(connection_name: str):
                 )
                 for table in new_tables
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_tables)} new table(s) mapped successfully.", level="success"
         )
@@ -577,7 +604,7 @@ def scan_infra(connection_name: str):
                 )
                 for column in new_columns
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_columns)} new column(s) mapped successfully.", level="success"
         )
@@ -678,7 +705,7 @@ def scan_infra(connection_name: str):
                 )
                 for role in new_roles
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_roles)} new roles mapped successfully.", level="success"
         )
@@ -694,7 +721,9 @@ def scan_infra(connection_name: str):
     # fetch Users from Kendo
     # show missing and new (match by name)
     # prompt to record the new ones
-    users_in_sf = execute(session, f"show users")
+    users_in_sf = execute(session, f"show users", use_role=ROLE_SECURITYADMIN)
+    # switch back to SYSADMIN role
+    execute(session, f"USE ROLE {ROLE_SYSADMIN}")
     users_in_sf = [
         {
             "login_name": user["login_name"],
@@ -712,6 +741,11 @@ def scan_infra(connection_name: str):
                 else None
             ),
             "ext_authn_uid": user["ext_authn_uid"],
+            "is_ext_authn_duo": (
+                False
+                if (not user["ext_authn_uid"] or user["ext_authn_uid"] == "false")
+                else True
+            ),
         }
         for user in users_in_sf
     ]
@@ -771,6 +805,7 @@ def scan_infra(connection_name: str):
                     "owner_role_id",
                     "default_role_id",
                     "ext_authn_uid",
+                    "is_ext_authn_duo",
                 ],
             )
             insert_statement = generate_insert_v2(i_insert)
@@ -783,10 +818,11 @@ def scan_infra(connection_name: str):
                     user["owner_role_id"],
                     user["default_role_id"],
                     user["ext_authn_uid"],
+                    user["is_ext_authn_duo"],
                 )
                 for user in new_users
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_users)} new users mapped successfully.", level="success"
         )
@@ -832,15 +868,19 @@ def scan_infra(connection_name: str):
         + table["NAME"]
         for table in tables_in_kendo
     }
-    kendo_granted_on_obj_name_key_map = {
+    kendo_all_obj_name_key_map = {
         "DATABASE": kendo_db_name_key_map,
         "SCHEMA": kendo_schema_name_key_map,
         "TABLE": kendo_table_name_key_map,
+        "ROLE": kendo_role_name_key_map,
+        "USER": kendo_user_name_key_map,
     }
-    kendo_granted_on_obj_id_key_map = {
+    kendo_all_obj_id_key_map = {
         "DATABASE": kendo_db_id_key_map,
         "SCHEMA": kendo_schema_id_key_full_name_map,
         "TABLE": kendo_table_id_key_full_name_map,
+        "ROLE": kendo_role_id_key_map,
+        "USER": kendo_user_id_key_map,
     }
     privilege_grants_in_sf = []
     skipped_privilege_grants_on = set()
@@ -870,7 +910,7 @@ def scan_infra(connection_name: str):
                         "created_on": grant["created_on"],
                         "privilege": grant["privilege"],
                         "granted_on": grant["granted_on"],
-                        "granted_on_id": kendo_granted_on_obj_name_key_map[
+                        "granted_on_id": kendo_all_obj_name_key_map[
                             grant["granted_on"]
                         ][grant["name"]],
                         "granted_on_name": grant["name"],
@@ -899,7 +939,7 @@ def scan_infra(connection_name: str):
         map(
             lambda grant: {
                 **grant,
-                "GRANTED_ON_NAME": kendo_granted_on_obj_id_key_map[grant["GRANTED_ON"]][
+                "GRANTED_ON_NAME": kendo_all_obj_id_key_map[grant["GRANTED_ON"]][
                     grant["GRANTED_ON_ID"]
                 ],
                 "GRANTED_TO_NAME": kendo_role_id_key_map[grant["GRANTED_TO_ID"]],
@@ -1006,31 +1046,33 @@ def scan_infra(connection_name: str):
                 )
                 for grant in new_grants
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_grants)} new privilege grant(s) mapped successfully.",
             level="success",
         )
 
-    colored_print("Scanning role grants to users...", level="info")
+    colored_print("Scanning role grants...", level="info")
     # fetch grants from sf
     # fetch grants from kendo
     # show missing and new
     # prompt to record the new ones
     role_grants_in_sf = []
-    for user in users_in_kendo:
-        grants_of_this_user = execute(
+    for role in roles_in_kendo:
+        grants_of_this_role = execute(
             session,
-            f"show grants to user {user['LOGIN_NAME']}",
+            f"show grants of role {role['NAME']}",
         )
-        grants_of_this_user = [
+        grants_of_this_role = [
             {
                 "created_on": grant["created_on"],
                 "role": grant["role"],
                 "role_id": kendo_role_name_key_map[grant["role"]],
                 "granted_to": grant["granted_to"],
                 "grantee_name": grant["grantee_name"],
-                "granted_to_id": kendo_user_name_key_map[grant["grantee_name"]],
+                "granted_to_id": kendo_all_obj_name_key_map[grant["granted_to"]][
+                    grant["grantee_name"]
+                ],
                 "granted_by": grant["granted_by"],
                 "granted_by_role_id": (
                     kendo_role_name_key_map[grant["granted_by"]]
@@ -1038,9 +1080,9 @@ def scan_infra(connection_name: str):
                     else None
                 ),
             }
-            for grant in grants_of_this_user
+            for grant in grants_of_this_role
         ]
-        role_grants_in_sf.extend(grants_of_this_user)
+        role_grants_in_sf.extend(grants_of_this_role)
     role_grants_in_kendo = execute(
         session,
         generate_select(
@@ -1052,7 +1094,9 @@ def scan_infra(connection_name: str):
             lambda grant: {
                 **grant,
                 "ROLE": kendo_role_id_key_map[grant["ROLE_ID"]],
-                "GRANTEE_NAME": kendo_user_id_key_map[grant["GRANTED_TO_ID"]],
+                "GRANTEE_NAME": kendo_all_obj_id_key_map[grant["GRANTED_TO"]][
+                    grant["GRANTED_TO_ID"]
+                ],
                 "GRANTED_BY": (
                     kendo_role_id_key_map[grant["GRANTED_BY_ROLE_ID"]]
                     if grant["GRANTED_BY_ROLE_ID"]
@@ -1066,14 +1110,16 @@ def scan_infra(connection_name: str):
     temp_list = [
         (
             grant["role"],
-            grant["grantee_name"],
+            grant["granted_to"],
+            grant["granted_to_id"],
         )
         for grant in role_grants_in_sf
     ]
     for grant in role_grants_in_kendo:
         if (
             grant["ROLE"],
-            grant["GRANTEE_NAME"],
+            grant["GRANTED_TO"],
+            grant["GRANTED_TO_ID"],
         ) not in temp_list:
             missing_role_grants.append(grant)
     if missing_role_grants:
@@ -1094,14 +1140,16 @@ def scan_infra(connection_name: str):
     temp_list = [
         (
             grant["ROLE"],
-            grant["GRANTEE_NAME"],
+            grant["GRANTED_TO"],
+            grant["GRANTED_TO_ID"],
         )
         for grant in role_grants_in_kendo
     ]
     for grant in role_grants_in_sf:
         if (
             grant["role"],
-            grant["grantee_name"],
+            grant["granted_to"],
+            grant["granted_to_id"],
         ) not in temp_list:
             new_role_grants.append(grant)
     if new_role_grants:
@@ -1144,7 +1192,7 @@ def scan_infra(connection_name: str):
                 )
                 for grant in new_role_grants
             ]
-            execute_many(session, insert_statement, data)
+            execute_many(session, insert_statement, data, use_role=ROLE_SYSADMIN)
         colored_print(
             f"{len(new_role_grants)} new role grant(s) mapped successfully.",
             level="success",

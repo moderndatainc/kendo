@@ -19,10 +19,16 @@ REQUIRED_GRANTS = [
 
 def show_session_details(connection_name: str):
     session = get_session(connection_name)
+
+    res = execute(session, f"SHOW GRANTS TO USER {session.user}")
+    user_roles = []
+    for i, grant in enumerate(res):
+        user_roles.append(grant["role"])
+
     data = {
         "warehouse": session.warehouse,
         "user": session.user,
-        "role": session.role,
+        "roles": user_roles,
     }
     print(data)
     close_session(session)
@@ -30,19 +36,25 @@ def show_session_details(connection_name: str):
 
 def show_missing_grants(connection_name: str):
     session = get_session(connection_name)
-    res = execute(session, f"SHOW GRANTS TO ROLE {session.role}")
-    assert res is not None
+    grants_to_user = execute(session, f"SHOW GRANTS TO USER {session.user}")
+    user_roles = []
+    for i, grant in enumerate(grants_to_user):
+        user_roles.append(grant["role"])
+
     missing_grants = REQUIRED_GRANTS
-    for i, grant in enumerate(res):
-        for required_grant in missing_grants:
-            if (
-                grant["privilege"] == required_grant["privilege"]
-                and grant["granted_on"] == required_grant["granted_on"]
-            ):
-                missing_grants.remove(required_grant)
+    for role in user_roles:
+        grants_to_role = execute(session, f"SHOW GRANTS TO ROLE {role}")
+        assert grants_to_role is not None
+        for i, grant in enumerate(grants_to_role):
+            for required_grant in missing_grants:
+                if (
+                    grant["privilege"] == required_grant["privilege"]
+                    and grant["granted_on"] == required_grant["granted_on"]
+                ):
+                    missing_grants.remove(required_grant)
 
     if len(missing_grants) == 0:
-        print("Role in session has all of the required grants")
+        print("User in session has all of the required grants")
     else:
         print(missing_grants)
     close_session(session)
