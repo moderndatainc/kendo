@@ -51,7 +51,7 @@ def setup_config_database(connection_name: str):
     )
 
     res = execute_anonymous_block(
-        session, sql_statments, use_warehouse=session.warehouse
+        session, sql_statments
     )
 
     if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
