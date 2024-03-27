@@ -37,22 +37,11 @@ exclusion_rules = {
 def setup_config_database(connection_name: str):
     session = get_session(connection_name)
 
-    # check if user has SYSADMIN
-    role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
-    ROLE_SYSADMIN = ""
-    for i, grant in enumerate(role_grant_check):
-        if grant["role"] == "SYSADMIN":
-            ROLE_SYSADMIN = "SYSADMIN"
-            break
-    if not ROLE_SYSADMIN:
-        print("User does not have SYSADMIN role. Aborting...")
-        raise typer.Abort()
-
     # body
     sql_statments = """
         USE ROLE {role};
     """.format(
-        role=ROLE_SYSADMIN,
+        role="SYSADMIN",
     )
     sql_statments += config_v1_sql
     sql_statments += """
