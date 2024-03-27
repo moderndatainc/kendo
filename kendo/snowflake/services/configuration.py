@@ -37,18 +37,23 @@ exclusion_rules = {
 def setup_config_database(connection_name: str):
     session = get_session(connection_name)
 
-    # check if user has SYSADMIN
+    # check if user has correct roles
     role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
     ROLE_SYSADMIN = ""
+    ROLE_SECURITYADMIN = ""
     for i, grant in enumerate(role_grant_check):
         if grant["role"] == "SYSADMIN":
             ROLE_SYSADMIN = "SYSADMIN"
-            break
+        if grant["role"] == "SECURITYADMIN":
+            ROLE_SECURITYADMIN = "SECURITYADMIN"
     if not ROLE_SYSADMIN:
         print("User does not have SYSADMIN role. Aborting...")
         raise typer.Abort()
+    if not ROLE_SECURITYADMIN:
+        print("User does not have SECURITYADMIN role. Aborting...")
+        raise typer.Abort()
 
-    # body
+    # Part 1: setup kendo_db database and its tables
     sql_statments = """
         USE ROLE {role};
     """.format(
@@ -60,13 +65,35 @@ def setup_config_database(connection_name: str):
     """.format(
         result=COMPLETED,
     )
-
+    res = None
     res = execute_anonymous_block(
         session, sql_statments, use_warehouse=session.warehouse
     )
-
     if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
-        print("Setup completed successfully")
+        print("Database setup completed successfully")
+
+    # Part 2: permit access to snowflake.account_usage views
+    sql_statments = """
+        USE ROLE {role};
+    """.format(
+        role=ROLE_SECURITYADMIN,
+    )
+    sql_statments += """
+        GRANT IMPORTED PRIVILEGES ON DATABASE snowflake TO ROLE {role};
+    """.format(
+        role=ROLE_SYSADMIN,
+    )
+    sql_statments += """
+        RETURN '{result}';
+    """.format(
+        result=COMPLETED,
+    )
+    res = None
+    res = execute_anonymous_block(
+        session, sql_statments, use_warehouse=session.warehouse
+    )
+    if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
+        print("SYSADMIN granted read access to snowflake.account_usage successfully")
 
     close_session(session)
 

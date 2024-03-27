@@ -7,7 +7,7 @@ from rich import print
 from .services.security_clearance import (
     show_session_details,
     show_missing_grants as show_missing_grants_service,
-    show_required_grants as show_required_grants_service,
+    show_required_roles as show_required_roles_service,
 )
 from .services.configuration import (
     setup_config_database,
@@ -54,11 +54,11 @@ def show_missing_grants():
 
 
 @app.command()
-def show_required_grants():
+def show_required_roles():
     """
     Show Grants required to operate CLI.
     """
-    show_required_grants_service()
+    show_required_roles_service()
 
 
 @app.command()

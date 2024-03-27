@@ -16,6 +16,11 @@ REQUIRED_GRANTS = [
     },
 ]
 
+REQUIRED_ROLES = [
+    "SYSADMIN",
+    "SECURITYADMIN",
+]
+
 
 def show_session_details(connection_name: str):
     session = get_session(connection_name)
@@ -60,11 +65,5 @@ def show_missing_grants(connection_name: str):
     close_session(session)
 
 
-def show_required_grants():
-    print(REQUIRED_GRANTS)
-
-
-def permit_account_usage_views(connection_name: str):
-    session = get_session(connection_name)
-
-    close_session(session)
+def show_required_roles():
+    print(REQUIRED_ROLES)
