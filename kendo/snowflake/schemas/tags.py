@@ -1,18 +1,18 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
-from .enums import TagAssignmentObject
+from .enums import TagableType
 
 
-class ITagAssignmentObject(BaseModel):
-    type: TagAssignmentObject
+class ITagableObj(BaseModel):
+    type: TagableType
     path: str = Field(min_length=1)
 
 
-class ITagAssignment(BaseModel):
+class ITagAssignmentRequest(BaseModel):
     tag: str = Field(min_length=1)
     value: str = Field(min_length=1)
-    objects: List[ITagAssignmentObject]
+    objects: List[ITagableObj]
 
     @field_validator("objects")
     @classmethod

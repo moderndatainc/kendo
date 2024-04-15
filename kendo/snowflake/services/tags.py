@@ -9,7 +9,7 @@ from kendo.snowflake.connection import (
     execute_anonymous_block,
     execute,
 )
-from kendo.snowflake.schemas.tags import ITagAssignment
+from kendo.snowflake.schemas.tags import ITagAssignmentRequest
 from kendo.snowflake.utils.crud import (
     IInsert,
     ISelect,
@@ -110,7 +110,7 @@ def set_tag(connection_name: str, file_path: Path):
             tag_assignment_data = json.load(f)
 
         # validate data
-        tag_assignment_data = ITagAssignment.model_validate(tag_assignment_data)
+        tag_assignment_data = ITagAssignmentRequest.model_validate(tag_assignment_data)
 
         # check if tag exists
         i_select: ISelect = ISelect(

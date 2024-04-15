@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class TagAssignmentObject(Enum):
+class TagableType(Enum):
     USER = "user"
     ROLE = "role"
     TABLE = "table"
