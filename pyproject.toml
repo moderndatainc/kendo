@@ -14,6 +14,11 @@ snowflake-connector-python = "^3.6.0"
 python-dotenv = "^1.0.1"
 typer = {extras = ["all"], version = "^0.9.0"}
 pydantic = "^2.6.1"
+snowflake-sqlalchemy = "^1.5.2"
+tomli = "^2.0.1"
+tomli-w = "^1.0.0"
+sqlalchemy = "^1.4"
+duckdb-engine = "^0.11.5"
 
 
 [build-system]

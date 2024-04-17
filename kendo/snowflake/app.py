@@ -1,8 +1,10 @@
 from pathlib import Path
 import typer
 from typing_extensions import Annotated
-from typing import List, Optional
+from typing import List, Literal, Optional
 from rich import print
+
+from kendo.snowflake.schemas.enums import BackendDB
 
 from .services.security_clearance import (
     show_session_details,
@@ -70,11 +72,13 @@ def scan_infra():
 
 
 @app.command()
-def configure():
+def configure(
+    backend_db: Annotated[Optional[BackendDB], typer.Option()] = BackendDB.snowflake,
+):
     """
     Setup database and schema in Snowflake required for managing Access Control.
     """
-    setup_config_database(snowflake_connection_name)
+    setup_config_database(backend_db, snowflake_connection_name)
 
 
 @app.command()

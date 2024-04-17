@@ -1,5 +1,7 @@
 import typer
 import snowflake.connector
+import tomli
+import os
 from snowflake.connector import connect, DictCursor
 from snowflake.connector.errors import ProgrammingError
 
@@ -8,9 +10,15 @@ from kendo.snowflake.schemas.common import ICaughtException
 snowflake.connector.paramstyle = "qmark"
 
 
-def get_session(connection_name="default"):
+def get_snowflake_session(connection_name="default"):
     return connect(connection_name=connection_name)
 
+def get_credentials_from_toml(connection_name="default"):
+    snowflake_local_dir = os.path.join(os.path.expanduser("~"), ".snowflake")
+    connections_path = os.path.join(snowflake_local_dir, "connections.toml")
+    with open(connections_path, "rb") as f:
+        config = tomli.load(f)
+    return config[connection_name]
 
 def execute(
     session,
@@ -117,5 +125,5 @@ def execute_many(
             raise typer.Abort()
 
 
-def close_session(session):
+def close_snowflake_session(session):
     session.close()

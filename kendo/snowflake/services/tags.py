@@ -4,8 +4,8 @@ from rich import print, print_json
 import typer
 import json
 from kendo.snowflake.connection import (
-    get_session,
-    close_session,
+    get_snowflake_session,
+    close_snowflake_session,
     execute_anonymous_block,
     execute,
 )
@@ -23,7 +23,7 @@ from kendo.snowflake.utils.crud import (
 def create_tag(
     connection_name: str, name: str, allowed_values: Optional[List[str]] = None
 ):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
 
     # check for duplicate
     i_select_duplicate_check: ISelect = ISelect(
@@ -71,11 +71,11 @@ def create_tag(
 
     print(f"Tag '{name}' created successfully.")
 
-    close_session(session)
+    close_snowflake_session(session)
 
 
 def show_tags(connection_name: str, name: Optional[str]):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
     i_select: ISelect = ISelect(
         table="kendo_db.config.tags",
     )
@@ -96,14 +96,14 @@ def show_tags(connection_name: str, name: Optional[str]):
                 res[i]["allowed_values"] = [val["VALUE"] for val in allowed_values]
             del res[i]["ID"]
     print_json(data=res)
-    close_session(session)
+    close_snowflake_session(session)
 
 
 def set_tag(connection_name: str, file_path: Path):
     # TODO: handle effect on existing policies
 
     if file_path.is_file():
-        session = get_session(connection_name)
+        session = get_snowflake_session(connection_name)
 
         tag_assignment_data = None
         with open(file_path) as f:
@@ -172,7 +172,7 @@ def set_tag(connection_name: str, file_path: Path):
                 execute(session, generate_insert(i_insert))
 
         print(f"Tag '{tag_assignment_data.tag}' set successfully.")
-        close_session(session)
+        close_snowflake_session(session)
     else:
         print(f"File not found: {file_path}")
         raise typer.Abort()

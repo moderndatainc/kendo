@@ -1,14 +1,21 @@
+import os
+from typing import Literal
+import tomli
+import tomli_w
 import typer
 from rich import print
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from kendo.snowflake.connection import (
-    get_session,
-    close_session,
+    get_snowflake_session,
+    close_snowflake_session,
     execute_anonymous_block,
     execute,
     execute_many,
 )
+from kendo.snowflake.models.database import DatabaseObjModel
+from kendo.snowflake.models.tag import TagModel
 from kendo.snowflake.schemas.common import ICaughtException
+from kendo.snowflake.schemas.enums import BackendDB
 from kendo.snowflake.utils.constants import ANONYMOUS_BLOCK, COMPLETED
 from kendo.snowflake.ddl.config.v1 import SQL as config_v1_sql
 from kendo.snowflake.utils.crud import (
@@ -18,6 +25,7 @@ from kendo.snowflake.utils.crud import (
     generate_select,
 )
 from kendo.snowflake.utils.rich import colored_print
+from kendo.snowflake.utils.config_db_connection import close_config_db_session, get_config_db_session
 
 exclusion_rules = {
     "databases": ["snowflake", "snowflake_sample_data", "kendo_db"],
@@ -34,45 +42,79 @@ exclusion_rules = {
 }
 
 
-def setup_config_database(connection_name: str):
-    session = get_session(connection_name)
+def setup_config_database(backend_db: BackendDB, connection_name: str):
+    snowflake_session = get_snowflake_session(connection_name)
 
-    # check if user has SYSADMIN
-    role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
-    ROLE_SYSADMIN = ""
-    for i, grant in enumerate(role_grant_check):
-        if grant["role"] == "SYSADMIN":
-            ROLE_SYSADMIN = "SYSADMIN"
-            break
-    if not ROLE_SYSADMIN:
-        print("User does not have SYSADMIN role. Aborting...")
-        raise typer.Abort()
+    # check if kendo local config file exists
+    kendo_local_dir = os.path.join(os.path.expanduser("~"), ".kendo")
+    if not os.path.exists(kendo_local_dir):
+        os.makedirs(kendo_local_dir)
+    kendo_config_path = os.path.join(kendo_local_dir, "config.toml")
+    config_doc = None
+    if not os.path.exists(kendo_config_path):
+        # create config file
+        config_doc = {"backend_db": backend_db}
+        with open(kendo_config_path, "wb") as f:
+            tomli_w.dump(config_doc, f)
+    else:
+        with open(kendo_config_path, "rb") as f:
+            config_doc = tomli.load(f)
+        if config_doc.get("backend_db") != backend_db:
+            # update config_db
+            config_doc["backend_db"] = backend_db
+            with open(kendo_config_path, "wb") as f:
+                tomli_w.dump(config_doc, f)
 
-    # body
-    sql_statments = """
-        USE ROLE {role};
-    """.format(
-        role=ROLE_SYSADMIN,
-    )
-    sql_statments += config_v1_sql
-    sql_statments += """
-        RETURN '{result}';
-    """.format(
-        result=COMPLETED,
-    )
-
-    res = execute_anonymous_block(
-        session, sql_statments, use_warehouse=session.warehouse
+    config_db_session, config_db_engine = get_config_db_session(
+        backend_db, connection_name=connection_name
     )
 
-    if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
-        print("Setup completed successfully")
+    database_objs = config_db_session.query(DatabaseObjModel).all()
+    print(database_objs)
+    tag_objs = config_db_session.query(TagModel).all()
+    print(tag_objs)
 
-    close_session(session)
+    # config_db_session.add(TagModel(id=3, name="PII2"))
+    # config_db_session.commit()
+    
+    close_config_db_session(config_db_session, config_db_engine)
+
+    # # check if user has SYSADMIN
+    # role_grant_check = execute(snowflake_session, f"SHOW GRANTS TO USER {snowflake_session.user}")
+    # ROLE_SYSADMIN = ""
+    # for i, grant in enumerate(role_grant_check):
+    #     if grant["role"] == "SYSADMIN":
+    #         ROLE_SYSADMIN = "SYSADMIN"
+    #         break
+    # if not ROLE_SYSADMIN:
+    #     print("User does not have SYSADMIN role. Aborting...")
+    #     raise typer.Abort()
+
+    # # body
+    # sql_statments = """
+    #     USE ROLE {role};
+    # """.format(
+    #     role=ROLE_SYSADMIN,
+    # )
+    # sql_statments += config_v1_sql
+    # sql_statments += """
+    #     RETURN '{result}';
+    # """.format(
+    #     result=COMPLETED,
+    # )
+
+    # res = execute_anonymous_block(
+    #     snowflake_session, sql_statments, use_warehouse=snowflake_session.warehouse
+    # )
+
+    # if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
+    #     print("Setup completed successfully")
+
+    close_snowflake_session(snowflake_session)
 
 
 def scan_infra(connection_name: str):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
 
     # check if user has SYSADMIN
     role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
@@ -1198,4 +1240,4 @@ def scan_infra(connection_name: str):
             level="success",
         )
 
-    close_session(session)
+    close_snowflake_session(session)

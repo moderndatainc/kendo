@@ -1,5 +1,5 @@
 from rich import print
-from kendo.snowflake.connection import get_session, close_session, execute
+from kendo.snowflake.connection import get_snowflake_session, close_snowflake_session, execute
 
 REQUIRED_GRANTS = [
     {
@@ -18,7 +18,7 @@ REQUIRED_GRANTS = [
 
 
 def show_session_details(connection_name: str):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
 
     res = execute(session, f"SHOW GRANTS TO USER {session.user}")
     user_roles = []
@@ -31,11 +31,11 @@ def show_session_details(connection_name: str):
         "roles": user_roles,
     }
     print(data)
-    close_session(session)
+    close_snowflake_session(session)
 
 
 def show_missing_grants(connection_name: str):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
     grants_to_user = execute(session, f"SHOW GRANTS TO USER {session.user}")
     user_roles = []
     for i, grant in enumerate(grants_to_user):
@@ -57,7 +57,7 @@ def show_missing_grants(connection_name: str):
         print("User in session has all of the required grants")
     else:
         print(missing_grants)
-    close_session(session)
+    close_snowflake_session(session)
 
 
 def show_required_grants():
@@ -65,6 +65,6 @@ def show_required_grants():
 
 
 def permit_account_usage_views(connection_name: str):
-    session = get_session(connection_name)
+    session = get_snowflake_session(connection_name)
 
-    close_session(session)
+    close_snowflake_session(session)
