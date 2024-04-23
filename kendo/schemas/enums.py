@@ -7,3 +7,6 @@ class TagableType(Enum):
     TABLE = "table"
     COLUMN = "column"
     VIEW = "view"
+
+class BackendProvider(str, Enum):
+    snowflake = "snowflake"
