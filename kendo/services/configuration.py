@@ -1,15 +1,17 @@
 import os
+
 import tomli
 import tomli_w
 import typer
 from rich import print
 from rich.progress import Progress, SpinnerColumn, TextColumn
+
 from kendo.datasource import SnowflakeDatasourceConnection
+from kendo.factory import Factory
 from kendo.schemas.common import ICaughtException
 from kendo.schemas.enums import BackendProvider
 from kendo.services.common import get_kendo_config_or_raise_error
 from kendo.utils.rich import colored_print
-from kendo.factory import Factory
 
 exclusion_rules = {
     "databases": ["snowflake", "snowflake_sample_data", "kendo_db"],
@@ -92,7 +94,6 @@ def setup_config_database(
 
 
 def scan_databases(snowflake_ds, factory):
-
     colored_print("Scanning databases...", level="info")
     # fetch Databases from SF
     # fetch Databases from Kendo
@@ -175,36 +176,11 @@ def scan_databases(snowflake_ds, factory):
         )
     kendo_db_id_key_map = {db["ID"]: db["NAME"] for db in dbs_in_kendo}  # type: ignore
 
-    return kendo_db_id_key_map
+    return dbs_in_kendo, kendo_db_id_key_map
 
 
-    
-
-def scan_infra(object_type):
-
-    config_doc = get_kendo_config_or_raise_error()
-    factory = Factory(config_doc)
-    datasource_connection_name = config_doc["datasource"]["connection_name"]
-    if config_doc["backend"]["provider"] == BackendProvider.snowflake:
-        factory.backend_connection.execute("USE ROLE SYSADMIN;")
-    snowflake_ds = SnowflakeDatasourceConnection(datasource_connection_name)
-    snowflake_ds.execute("USE ROLE SYSADMIN;")
-
-    colored_print("Scanning Snowflake infrastructure...", level="info")
-
-    if object_type == "databases":
-        kendo_db_id_key_map  = scan_databases(snowflake_ds, factory)
-    
-
-
+def scan_schemas(snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo):
     colored_print("Scanning schemas...", level="info")
-    # fetch Schemas from SF
-    # attach kendo's database_id to each schema (match by catalog_name)
-    # fetch Schemas from Kendo
-    # show missing and new (match by name and database_id)
-    # prompt to record the new ones
-    # insert the new records
-    # select all records and store in memory, id will be needed
     schemas_in_sf = []
     skipped_dbs = []
     for db in dbs_in_kendo:  # type: ignore
@@ -325,21 +301,20 @@ def scan_infra(object_type):
                 table="kendo_db.infrastructure.schema_objs"
             ).generate_statement(),
         )
-        assert isinstance(schemas_in_kendo, list)
-        schemas_in_kendo = list(
-            map(
-                lambda schema: {
-                    **schema,
-                    "DATABASE_NAME": kendo_db_id_key_map[schema["DATABASE_ID"]],
-                },
-                schemas_in_kendo,
-            )
-        )
     kendo_schema_id_key_map = {
-        schema["ID"]: {"name": schema["NAME"], "database_id": schema["DATABASE_ID"]}
-        for schema in schemas_in_kendo
-    }
+        schema["ID"]: schema["NAME"] for schema in schemas_in_kendo
+    }  # type: ignore
 
+    return schemas_in_kendo, kendo_schema_id_key_map
+
+
+def scan_tables(
+    snowflake_ds,
+    factory,
+    schemas_in_kendo,
+    kendo_schema_id_key_map,
+    kendo_db_id_key_map,
+):
     colored_print("Scanning tables...", level="info")
     # fetch Tables from SF
     # attach kendo's schema_id to each Table (match by table_schema, table_catalog)
@@ -499,6 +474,17 @@ def scan_infra(object_type):
         for table in tables_in_kendo
     }
 
+    return tables_in_kendo, kendo_table_id_key_map
+
+
+def scan_columns(
+    snowflake_ds,
+    factory,
+    tables_in_kendo,
+    kendo_table_id_key_map,
+    kendo_schema_id_key_map,
+    kendo_db_id_key_map,
+):
     colored_print("Scanning columns...", level="info")
     # fetch Columns from SF
     # attach kendo's table_id to each Column (match by table_name, table_schema, table_catalog)
@@ -661,6 +647,10 @@ def scan_infra(object_type):
             ),
         )
 
+    return columns_in_kendo
+
+
+def scan_roles(snowflake_ds, factory):
     colored_print("Scanning roles...", level="info")
     # fetch Roles from SF
     # fetch Roles from Kendo
@@ -743,6 +733,10 @@ def scan_infra(object_type):
     kendo_role_id_key_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}  # type: ignore
     kendo_role_name_key_map = {role["NAME"]: role["ID"] for role in roles_in_kendo}  # type: ignore
 
+    return kendo_role_id_key_map, kendo_role_name_key_map
+
+
+def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
     colored_print("Scanning users...", level="info")
     # fetch Users from SF
     # fetch Users from Kendo
@@ -862,9 +856,28 @@ def scan_infra(object_type):
         )
     kendo_user_id_key_map = {user["ID"]: user["LOGIN_NAME"] for user in users_in_kendo}  # type: ignore
     kendo_user_name_key_map = {
-        user["LOGIN_NAME"]: user["ID"] for user in users_in_kendo  # type: ignore
+        user["LOGIN_NAME"]: user["ID"]
+        for user in users_in_kendo  # type: ignore
     }
 
+    return kendo_user_id_key_map, kendo_user_name_key_map
+
+
+def scan_grants_to_roles(
+    snowflake_ds,
+    factory,
+    dbs_in_kendo,
+    schemas_in_kendo,
+    tables_in_kendo,
+    roles_in_kendo,
+    kendo_db_id_key_map,
+    kendo_schema_id_key_map,
+    kendo_table_id_key_full_name_map,
+    kendo_role_id_key_map,
+    kendo_user_id_key_map,
+    kendo_role_name_key_map,
+    kendo_user_name_key_map,
+):
     colored_print("Scanning privilege grants to roles...", level="info")
     # create new map for database, schema, table with name as key
     # fetch grants from sf
@@ -1082,7 +1095,19 @@ def scan_infra(object_type):
             f"{len(new_grants)} new privilege grant(s) mapped successfully.",
             level="success",
         )
+    
+    return kendo_all_obj_id_key_map, kendo_all_obj_name_key_map
 
+
+def scan_role_grants(
+    snowflake_ds,
+    factory,
+    roles_in_kendo,
+    kendo_role_name_key_map,
+    kendo_all_obj_name_key_map,
+    kendo_role_id_key_map,
+    kendo_all_obj_id_key_map,
+):
     colored_print("Scanning role grants...", level="info")
     # fetch grants from sf
     # fetch grants from kendo
@@ -1229,6 +1254,74 @@ def scan_infra(object_type):
             f"{len(new_role_grants)} new role grant(s) mapped successfully.",
             level="success",
         )
+
+
+def scan_infra(object_type):
+    config_doc = get_kendo_config_or_raise_error()
+    factory = Factory(config_doc)
+    datasource_connection_name = config_doc["datasource"]["connection_name"]
+    if config_doc["backend"]["provider"] == BackendProvider.snowflake:
+        factory.backend_connection.execute("USE ROLE SYSADMIN;")
+    snowflake_ds = SnowflakeDatasourceConnection(datasource_connection_name)
+    snowflake_ds.execute("USE ROLE SYSADMIN;")
+
+    colored_print("Scanning Snowflake infrastructure...", level="info")
+
+    if object_type == "databases":
+        dbs_in_kendo, kendo_db_id_key_map = scan_databases(snowflake_ds, factory)
+
+    if object_type == "schemas":
+        schemas_in_kendo, kendo_schema_id_key_map = scan_schemas(
+            snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo
+        )
+
+    if object_type == "tables":
+        tables_in_kendo, kendo_table_id_key_map = scan_tables(
+            snowflake_ds,
+            factory,
+            schemas_in_kendo,
+            kendo_schema_id_key_map,
+            kendo_db_id_key_map,
+        )
+
+    if object_type == "columns":
+        scan_columns(
+            snowflake_ds,
+            factory,
+            tables_in_kendo,
+            kendo_table_id_key_map,
+            kendo_schema_id_key_map,
+            kendo_db_id_key_map,
+        )
+
+    if object_type == "roles":
+        roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map = scan_roles(
+            snowflake_ds, factory
+        )
+
+    if object_type == "users":
+        kendo_user_id_key_map, kendo_user_name_key_map = scan_users(
+            snowflake_ds, factory, kendo_role_name_key_map
+        )
+
+    if object_type == "grants_to_roles":
+        # TODO: this is ridiculous, need to fix
+        scan_grants_to_roles(
+            snowflake_ds,
+            factory,
+            dbs_in_kendo,
+            tables_in_kendo,
+            roles_in_kendo,
+            kendo_db_id_key_map,
+            kendo_table_id_key_map,
+            kendo_role_id_key_map,
+            kendo_user_id_key_map,
+            kendo_role_name_key_map,
+            kendo_user_name_key_map,
+        )
+
+    if object_type == "role_grants":
+        scan_role_grants(snowflake_ds, factory, roles_in_kendo, kendo_role_name_key_map, kendo_all_obj_id_key_map, kendo_role_id_key_map, kendo_all_obj_id_key_map)
 
     snowflake_ds.close_session()
     factory.backend_connection.close_session()
