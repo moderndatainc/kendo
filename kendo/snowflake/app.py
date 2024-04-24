@@ -70,6 +70,16 @@ def scan_infra():
 
 
 @app.command()
+def create_policy(
+    policy_name: Annotated[str, typer.Argument()]
+):
+    """
+    Check Policy.
+    """
+    create_policy(snowflake_connection_name, policy_name)
+
+
+@app.command()
 def configure():
     """
     Setup database and schema in Snowflake required for managing Access Control.

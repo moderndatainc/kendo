@@ -31,6 +31,7 @@ exclusion_rules = {
         "kendoadmin",
         "public",
     ],
+    "users": ["snowflake"]
 }
 
 
@@ -61,8 +62,10 @@ def setup_config_database(connection_name: str):
         result=COMPLETED,
     )
 
+    res = execute_anonymous_block(session, 'show warehouses;')
+
     res = execute_anonymous_block(
-        session, sql_statments, use_warehouse=session.warehouse
+        session, sql_statments, use_warehouse='TRANSFORMING'
     )
 
     if res is not None and res[0][ANONYMOUS_BLOCK] == COMPLETED:
@@ -76,6 +79,8 @@ def scan_infra(connection_name: str):
 
     # check if user has SYSADMIN
     role_grant_check = execute(session, f"SHOW GRANTS TO USER {session.user}")
+    print(session.user)
+    print(role_grant_check)
     ROLE_SYSADMIN = ""
     ROLE_SECURITYADMIN = ""
     for i, grant in enumerate(role_grant_check):
@@ -104,6 +109,7 @@ def scan_infra(connection_name: str):
         for db in dbs_in_sf
         if db["name"].lower() not in exclusion_rules.get("databases", [])
     ]
+    print(dbs_in_sf)
     dbs_in_kendo = execute(
         session,
         generate_select(ISelect(table="kendo_db.infrastructure.database_objs")),
@@ -904,6 +910,10 @@ def scan_infra(connection_name: str):
                     and grant["name"] in exclusion_rules.get("schemas", [])
                 ):
                     # skipping grants on excluded objects
+                    continue
+                print(grant)
+                # skip Snowflake for now
+                if "SNOWFLAKE" in grant["name"]:
                     continue
                 temp_list.append(
                     {
