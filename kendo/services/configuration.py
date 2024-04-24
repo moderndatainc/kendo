@@ -91,16 +91,8 @@ def setup_config_database(
     factory.backend_connection.close_session()
 
 
-def scan_infra():
-    config_doc = get_kendo_config_or_raise_error()
-    factory = Factory(config_doc)
-    datasource_connection_name = config_doc["datasource"]["connection_name"]
-    if config_doc["backend"]["provider"] == BackendProvider.snowflake:
-        factory.backend_connection.execute("USE ROLE SYSADMIN;")
-    snowflake_ds = SnowflakeDatasourceConnection(datasource_connection_name)
-    snowflake_ds.execute(f"USE ROLE SYSADMIN;")
+def scan_databases(snowflake_ds, factory):
 
-    colored_print("Scanning Snowflake infrastructure...", level="info")
     colored_print("Scanning databases...", level="info")
     # fetch Databases from SF
     # fetch Databases from Kendo
@@ -108,7 +100,7 @@ def scan_infra():
     # prompt to record the new ones
     # insert the new records
     # select all records and store in memory, id will be needed
-    dbs_in_sf = snowflake_ds.execute(f"show databases")
+    dbs_in_sf = snowflake_ds.execute("show databases")
     assert isinstance(dbs_in_sf, list)
     dbs_in_sf = [
         {"name": db["name"], "created_on": db["created_on"]}
@@ -182,6 +174,28 @@ def scan_infra():
             ).generate_statement(),
         )
     kendo_db_id_key_map = {db["ID"]: db["NAME"] for db in dbs_in_kendo}  # type: ignore
+
+    return kendo_db_id_key_map
+
+
+    
+
+def scan_infra(object_type):
+
+    config_doc = get_kendo_config_or_raise_error()
+    factory = Factory(config_doc)
+    datasource_connection_name = config_doc["datasource"]["connection_name"]
+    if config_doc["backend"]["provider"] == BackendProvider.snowflake:
+        factory.backend_connection.execute("USE ROLE SYSADMIN;")
+    snowflake_ds = SnowflakeDatasourceConnection(datasource_connection_name)
+    snowflake_ds.execute("USE ROLE SYSADMIN;")
+
+    colored_print("Scanning Snowflake infrastructure...", level="info")
+
+    if object_type == "databases":
+        kendo_db_id_key_map  = scan_databases(snowflake_ds, factory)
+    
+
 
     colored_print("Scanning schemas...", level="info")
     # fetch Schemas from SF
@@ -653,7 +667,7 @@ def scan_infra():
     # show missing and new (match by name)
     # prompt to record the new ones
     # insert the new records
-    roles_in_sf = snowflake_ds.execute(f"show roles")
+    roles_in_sf = snowflake_ds.execute("show roles")
     assert isinstance(roles_in_sf, list)
     roles_in_sf = [
         {"name": role["name"], "created_on": role["created_on"]} for role in roles_in_sf
@@ -734,11 +748,11 @@ def scan_infra():
     # fetch Users from Kendo
     # show missing and new (match by name)
     # prompt to record the new ones
-    snowflake_ds.execute(f"USE ROLE SECURITYADMIN;")
-    users_in_sf = snowflake_ds.execute(f"show users")
+    snowflake_ds.execute("USE ROLE SECURITYADMIN;")
+    users_in_sf = snowflake_ds.execute("show users")
     assert isinstance(users_in_sf, list)
     # switch back to SYSADMIN role
-    snowflake_ds.execute(f"USE ROLE SYSADMIN;")
+    snowflake_ds.execute("USE ROLE SYSADMIN;")
     users_in_sf = [
         {
             "login_name": user["login_name"],

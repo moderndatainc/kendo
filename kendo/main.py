@@ -81,11 +81,16 @@ def show_required_grants():
 
 
 @app.command()
-def scan_infra():
+def scan_infra(object_type: Annotated[str, typer.Argument()]):
     """
     Scan Snowflake infrastructure.
     """
-    scan_infra_service()
+    allowed_object_types = ['databases', 'roles', 'schemas', 'tables', 'users'] # TODO: move to config 
+
+    assert object_type is not None
+    assert object_type in allowed_object_types
+    
+    scan_infra_service(object_type)
 
 
 @app.command()
