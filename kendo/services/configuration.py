@@ -328,8 +328,8 @@ def scan_databases(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory
 def scan_schemas(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    dbs_in_kendo=None,
-    kendo_db_id_key_map=None,
+    dbs_in_kendo: List[DatabaseObj] | None = None,
+    kendo_db_id_key_map: Dict[int, DatabaseObj] | None = None,
 ):
     colored_print("Scanning schemas...", level="info")
     schemas_in_sf = []
@@ -449,8 +449,8 @@ def scan_schemas(
 def scan_tables(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    schemas_in_kendo=None,
-    kendo_schema_id_key_map=None,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
 ):
     colored_print("Scanning tables...", level="info")
     # fetch Tables from SF
@@ -579,8 +579,8 @@ def scan_tables(
 def scan_columns(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    tables_in_kendo=None,
-    kendo_table_id_key_map=None,
+    tables_in_kendo: List[TableObj] | None = None,
+    kendo_table_id_key_map: Dict[int, TableObj] | None = None,
 ):
     colored_print("Scanning columns...", level="info")
     # fetch Columns from SF
@@ -792,8 +792,8 @@ def scan_roles(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory):
 def scan_users(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    kendo_role_id_key_map=None,
-    kendo_role_name_key_map=None,
+    kendo_role_id_key_map: Dict[int, RoleObj] | None = None,
+    kendo_role_name_key_map: Dict[str, RoleObj] | None = None,
 ):
     colored_print("Scanning users...", level="info")
     # fetch Users from SF
@@ -921,10 +921,10 @@ def scan_users(
 def scan_grants_to_roles(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    dbs_in_kendo=None,
-    schemas_in_kendo=None,
-    tables_in_kendo=None,
-    roles_in_kendo=None,
+    dbs_in_kendo: List[DatabaseObj] | None = None,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    tables_in_kendo: List[TableObj] | None = None,
+    roles_in_kendo: List[RoleObj] | None = None,
 ):
     colored_print("Scanning privilege grants to roles...", level="info")
     # create new map for database, schema, table with name as key
@@ -1153,8 +1153,8 @@ def scan_grants_to_roles(
 def scan_role_grants(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
-    users_in_kendo=None,
-    roles_in_kendo=None,
+    users_in_kendo: List[UserObj] | None = None,
+    roles_in_kendo: List[RoleObj] | None = None,
 ):
     if not users_in_kendo:
         users_in_kendo, _, _ = _get_user_objs_in_kendo_with_key_maps(factory)
