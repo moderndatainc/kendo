@@ -1,4 +1,5 @@
 import os
+from typing import Dict, List, Tuple, cast
 
 import tomli
 import tomli_w
@@ -10,6 +11,16 @@ from kendo.datasource import SnowflakeDatasourceConnection
 from kendo.factory import Factory
 from kendo.schemas.common import ICaughtException
 from kendo.schemas.enums import BackendProvider
+from kendo.schemas.mapped_objs import (
+    ColumnObj,
+    DatabaseObj,
+    PrivilegeGrantObj,
+    RoleGrantObj,
+    RoleObj,
+    SchemaObj,
+    TableObj,
+    UserObj,
+)
 from kendo.services.common import get_kendo_config_or_raise_error
 from kendo.utils.rich import colored_print
 
@@ -93,7 +104,149 @@ def setup_config_database(
     factory.backend_connection.close_session()
 
 
-def scan_databases(snowflake_ds, factory):
+def _get_db_objs_in_kendo_with_id_key_map(
+    factory: Factory,
+) -> Tuple[List[DatabaseObj], Dict[int, DatabaseObj]]:
+    dbs_in_kendo = cast(
+        List[DatabaseObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.database_objs"
+            ).generate_statement(),
+        ),
+    )
+    kendo_db_id_key_map: Dict[int, DatabaseObj] = {db["ID"]: db for db in dbs_in_kendo}
+    return dbs_in_kendo, kendo_db_id_key_map
+
+
+def _get_schema_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_db_id_key_map=None
+) -> Tuple[List[SchemaObj], Dict[int, SchemaObj]]:
+    if not kendo_db_id_key_map:
+        _, kendo_db_id_key_map = _get_db_objs_in_kendo_with_id_key_map(factory)
+    schemas_in_kendo = cast(
+        List[SchemaObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.schema_objs"
+            ).generate_statement(),
+        ),
+    )
+    for schema in schemas_in_kendo:
+        schema["DATABASE_NAME"] = kendo_db_id_key_map[schema["DATABASE_ID"]]["NAME"]
+
+    kendo_schema_id_key_map: Dict[int, SchemaObj] = {
+        schema["ID"]: schema for schema in schemas_in_kendo
+    }
+    return schemas_in_kendo, kendo_schema_id_key_map
+
+
+def _get_table_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[TableObj], Dict[int, TableObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    tables_in_kendo = cast(
+        List[TableObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.table_objs"
+            ).generate_statement()
+        ),
+    )
+    for table in tables_in_kendo:
+        table["SCHEMA_NAME"] = kendo_schema_id_key_map[table["SCHEMA_ID"]]["NAME"]
+        table["DATABASE_ID"] = kendo_schema_id_key_map[table["SCHEMA_ID"]][
+            "DATABASE_ID"
+        ]
+        table["DATABASE_NAME"] = kendo_schema_id_key_map[table["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_table_id_key_map: Dict[int, TableObj] = {
+        table["ID"]: table for table in tables_in_kendo
+    }
+    return tables_in_kendo, kendo_table_id_key_map
+
+
+def _get_column_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_table_id_key_map=None
+) -> Tuple[List[ColumnObj], Dict[int, ColumnObj]]:
+    if not kendo_table_id_key_map:
+        _, kendo_table_id_key_map = _get_table_objs_in_kendo_with_id_key_map(factory)
+    columns_in_kendo = cast(
+        List[ColumnObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.column_objs"
+            ).generate_statement()
+        ),
+    )
+    for column in columns_in_kendo:
+        column["TABLE_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["NAME"]
+        column["SCHEMA_ID"] = kendo_table_id_key_map[column["TABLE_ID"]]["SCHEMA_ID"]
+        column["SCHEMA_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["SCHEMA_NAME"]  # type: ignore
+        column["DATABASE_ID"] = kendo_table_id_key_map[column["TABLE_ID"]]["DATABASE_ID"]  # type: ignore
+        column["DATABASE_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["DATABASE_NAME"]  # type: ignore
+
+    kendo_column_id_key_map: Dict[int, ColumnObj] = {
+        column["ID"]: column for column in columns_in_kendo
+    }
+    return columns_in_kendo, kendo_column_id_key_map
+
+
+def _get_role_objs_in_kendo_with_key_maps(
+    factory: Factory,
+) -> Tuple[List[RoleObj], Dict[int, RoleObj], Dict[str, RoleObj]]:
+    roles_in_kendo = cast(
+        List[RoleObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.role_objs"
+            ).generate_statement()
+        ),
+    )
+    kendo_role_id_key_map: Dict[int, RoleObj] = {
+        role["ID"]: role for role in roles_in_kendo
+    }
+    kendo_role_name_key_map: Dict[str, RoleObj] = {
+        role["NAME"]: role for role in roles_in_kendo
+    }
+    return roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map
+
+
+def _get_user_objs_in_kendo_with_key_maps(
+    factory: Factory, kendo_role_id_key_map=None
+) -> Tuple[List[UserObj], Dict[int, UserObj], Dict[str, UserObj]]:
+    if not kendo_role_id_key_map:
+        _, kendo_role_id_key_map, _ = _get_role_objs_in_kendo_with_key_maps(factory)
+    users_in_kendo = cast(
+        List[UserObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.user_objs"
+            ).generate_statement()
+        ),
+    )
+    for user in users_in_kendo:
+        if user["OWNER_ROLE_ID"]:  # type: ignore
+            user["OWNER_ROLE_NAME"] = kendo_role_id_key_map[user["OWNER_ROLE_ID"]][  # type: ignore
+                "NAME"
+            ]
+        if user["DEFAULT_ROLE_ID"]:  # type: ignore
+            user["DEFAULT_ROLE_NAME"] = kendo_role_id_key_map[user["DEFAULT_ROLE_ID"]][  # type: ignore
+                "NAME"
+            ]
+    kendo_user_id_key_map: Dict[int, UserObj] = {
+        user["ID"]: user for user in users_in_kendo
+    }
+    kendo_user_login_name_key_map: Dict[str, UserObj] = {
+        user["LOGIN_NAME"]: user for user in users_in_kendo
+    }
+    return users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map
+
+
+def scan_databases(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory):
     colored_print("Scanning databases...", level="info")
     # fetch Databases from SF
     # fetch Databases from Kendo
@@ -108,15 +261,11 @@ def scan_databases(snowflake_ds, factory):
         for db in dbs_in_sf
         if db["name"].lower() not in exclusion_rules.get("databases", [])
     ]
-    dbs_in_kendo = factory.backend_connection.execute(
-        factory.select(
-            table="kendo_db.infrastructure.database_objs"
-        ).generate_statement(),
-    )
+    dbs_in_kendo, kendo_db_id_key_map = _get_db_objs_in_kendo_with_id_key_map(factory)
 
     missing_dbs = []
     temp_list = [db["name"] for db in dbs_in_sf]
-    for db in dbs_in_kendo:  # type: ignore
+    for db in dbs_in_kendo:
         if db["NAME"] not in temp_list:
             missing_dbs.append(db)
     if missing_dbs:
@@ -134,7 +283,7 @@ def scan_databases(snowflake_ds, factory):
         )
 
     new_dbs = []
-    temp_list = [db["NAME"] for db in dbs_in_kendo]  # type: ignore
+    temp_list = [db["NAME"] for db in dbs_in_kendo]
     for db in dbs_in_sf:
         if db["name"] not in temp_list:
             new_dbs.append(db)
@@ -169,21 +318,27 @@ def scan_databases(snowflake_ds, factory):
         colored_print(
             f"{len(new_dbs)} new database(s) mapped successfully.", level="success"
         )
-        dbs_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.database_objs"
-            ).generate_statement(),
+        dbs_in_kendo, kendo_db_id_key_map = _get_db_objs_in_kendo_with_id_key_map(
+            factory
         )
-    kendo_db_id_key_map = {db["ID"]: db["NAME"] for db in dbs_in_kendo}  # type: ignore
 
     return dbs_in_kendo, kendo_db_id_key_map
 
 
-def scan_schemas(snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo):
+def scan_schemas(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    dbs_in_kendo=None,
+    kendo_db_id_key_map=None,
+):
     colored_print("Scanning schemas...", level="info")
     schemas_in_sf = []
     skipped_dbs = []
-    for db in dbs_in_kendo:  # type: ignore
+    if not dbs_in_kendo or not kendo_db_id_key_map:
+        dbs_in_kendo, kendo_db_id_key_map = _get_db_objs_in_kendo_with_id_key_map(
+            factory
+        )
+    for db in dbs_in_kendo:
         schemas_in_this_db = snowflake_ds.execute(
             f"show schemas in {db['NAME']}", abort_on_exception=False
         )
@@ -220,20 +375,8 @@ def scan_schemas(snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo):
             "Do you want to proceed with mapping excluding schemas from these databases?",
             abort=True,
         )
-    schemas_in_kendo = factory.backend_connection.execute(
-        factory.select(
-            table="kendo_db.infrastructure.schema_objs"
-        ).generate_statement(),
-    )
-    assert isinstance(schemas_in_kendo, list)
-    schemas_in_kendo = list(
-        map(
-            lambda schema: {
-                **schema,
-                "DATABASE_NAME": kendo_db_id_key_map[schema["DATABASE_ID"]],
-            },
-            schemas_in_kendo,
-        )
+    schemas_in_kendo, kendo_schema_id_key_map = (
+        _get_schema_objs_in_kendo_with_id_key_map(factory, kendo_db_id_key_map)
     )
 
     missing_schemas = []
@@ -296,24 +439,18 @@ def scan_schemas(snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo):
         colored_print(
             f"{len(new_schemas)} new schema(s) mapped successfully.", level="success"
         )
-        schemas_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.schema_objs"
-            ).generate_statement(),
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory, kendo_db_id_key_map)
         )
-    kendo_schema_id_key_map = {
-        schema["ID"]: schema["NAME"] for schema in schemas_in_kendo
-    }  # type: ignore
 
     return schemas_in_kendo, kendo_schema_id_key_map
 
 
 def scan_tables(
-    snowflake_ds,
-    factory,
-    schemas_in_kendo,
-    kendo_schema_id_key_map,
-    kendo_db_id_key_map,
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo=None,
+    kendo_schema_id_key_map=None,
 ):
     colored_print("Scanning tables...", level="info")
     # fetch Tables from SF
@@ -325,15 +462,19 @@ def scan_tables(
     # select all records and store in memory, id will be needed
     tables_in_sf = []
     skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
     for schema in schemas_in_kendo:
         tables_in_this_schema = snowflake_ds.execute(
-            f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}",
+            f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
             abort_on_exception=False,
         )
         if isinstance(tables_in_this_schema, ICaughtException):
             skipped_schemas.append(
                 {
-                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
                     "type": "schema",
                     "error": tables_in_this_schema.message,
                 }
@@ -346,7 +487,7 @@ def scan_tables(
                 "schema_id": schema["ID"],
                 "schema_name": schema["NAME"],
                 "database_id": schema["DATABASE_ID"],
-                "database_name": schema["DATABASE_NAME"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
             }
             for table in tables_in_this_schema
         ]
@@ -364,24 +505,8 @@ def scan_tables(
             "Do you want to proceed with mapping excluding tables from these schemas?",
             abort=True,
         )
-    tables_in_kendo = factory.backend_connection.execute(
-        factory.select(table="kendo_db.infrastructure.table_objs").generate_statement()
-    )
-    assert isinstance(tables_in_kendo, list)
-    tables_in_kendo = list(
-        map(
-            lambda table: {
-                **table,
-                "SCHEMA_NAME": kendo_schema_id_key_map[table["SCHEMA_ID"]]["name"],
-                "DATABASE_ID": kendo_schema_id_key_map[table["SCHEMA_ID"]][
-                    "database_id"
-                ],
-                "DATABASE_NAME": kendo_db_id_key_map[
-                    kendo_schema_id_key_map[table["SCHEMA_ID"]]["database_id"]
-                ],
-            },
-            tables_in_kendo,
-        ),
+    tables_in_kendo, kendo_table_id_key_map = _get_table_objs_in_kendo_with_id_key_map(
+        factory, kendo_schema_id_key_map
     )
 
     missing_tables = []
@@ -444,46 +569,18 @@ def scan_tables(
         colored_print(
             f"{len(new_tables)} new table(s) mapped successfully.", level="success"
         )
-        tables_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.table_objs"
-            ).generate_statement()
+        tables_in_kendo, kendo_table_id_key_map = (
+            _get_table_objs_in_kendo_with_id_key_map(factory, kendo_schema_id_key_map)
         )
-        assert isinstance(tables_in_kendo, list)
-        tables_in_kendo = list(
-            map(
-                lambda table: {
-                    **table,
-                    "SCHEMA_NAME": kendo_schema_id_key_map[table["SCHEMA_ID"]]["name"],
-                    "DATABASE_ID": kendo_schema_id_key_map[table["SCHEMA_ID"]][
-                        "database_id"
-                    ],
-                    "DATABASE_NAME": kendo_db_id_key_map[
-                        kendo_schema_id_key_map[table["SCHEMA_ID"]]["database_id"]
-                    ],
-                },
-                tables_in_kendo,
-            ),
-        )
-    kendo_table_id_key_map = {
-        table["ID"]: {
-            "name": table["NAME"],
-            "schema_id": table["SCHEMA_ID"],
-            "database_id": table["DATABASE_ID"],
-        }
-        for table in tables_in_kendo
-    }
 
     return tables_in_kendo, kendo_table_id_key_map
 
 
 def scan_columns(
-    snowflake_ds,
-    factory,
-    tables_in_kendo,
-    kendo_table_id_key_map,
-    kendo_schema_id_key_map,
-    kendo_db_id_key_map,
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    tables_in_kendo=None,
+    kendo_table_id_key_map=None,
 ):
     colored_print("Scanning columns...", level="info")
     # fetch Columns from SF
@@ -495,15 +592,19 @@ def scan_columns(
     # select all records and store in memory, id will be needed
     columns_in_sf = []
     skipped_tables = []
+    if not tables_in_kendo or not kendo_table_id_key_map:
+        tables_in_kendo, kendo_table_id_key_map = (
+            _get_table_objs_in_kendo_with_id_key_map(factory)
+        )
     for table in tables_in_kendo:
         columns_in_this_table = snowflake_ds.execute(
-            f"show columns in {table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",
+            f"show columns in {table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",  # type: ignore
             abort_on_exception=False,
         )
         if isinstance(columns_in_this_table, ICaughtException):
             skipped_tables.append(
                 {
-                    "obj": f"{table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",
+                    "obj": f"{table['DATABASE_NAME']}.{table['SCHEMA_NAME']}.{table['NAME']}",  # type: ignore
                     "type": "table",
                     "error": columns_in_this_table.message,
                 }
@@ -516,9 +617,9 @@ def scan_columns(
                 "table_id": table["ID"],
                 "table_name": table["NAME"],
                 "schema_id": table["SCHEMA_ID"],
-                "schema_name": table["SCHEMA_NAME"],
-                "database_id": table["DATABASE_ID"],
-                "database_name": table["DATABASE_NAME"],
+                "schema_name": table["SCHEMA_NAME"],  # type: ignore
+                "database_id": table["DATABASE_ID"],  # type: ignore
+                "database_name": table["DATABASE_NAME"],  # type: ignore
             }
             for column in columns_in_this_table
         ]
@@ -536,28 +637,8 @@ def scan_columns(
             "Do you want to proceed with mapping excluding columns from these tables?",
             abort=True,
         )
-    columns_in_kendo = factory.backend_connection.execute(
-        factory.select(table="kendo_db.infrastructure.column_objs").generate_statement()
-    )
-    assert isinstance(columns_in_kendo, list)
-    columns_in_kendo = list(
-        map(
-            lambda column: {
-                **column,
-                "TABLE_NAME": kendo_table_id_key_map[column["TABLE_ID"]]["name"],
-                "SCHEMA_ID": kendo_table_id_key_map[column["TABLE_ID"]]["schema_id"],
-                "SCHEMA_NAME": kendo_schema_id_key_map[
-                    kendo_table_id_key_map[column["TABLE_ID"]]["schema_id"]
-                ]["name"],
-                "DATABASE_ID": kendo_table_id_key_map[column["TABLE_ID"]][
-                    "database_id"
-                ],
-                "DATABASE_NAME": kendo_db_id_key_map[
-                    kendo_table_id_key_map[column["TABLE_ID"]]["database_id"]
-                ],
-            },
-            columns_in_kendo,
-        ),
+    columns_in_kendo, kendo_column_id_key_map = (
+        _get_column_objs_in_kendo_with_id_key_map(factory, kendo_table_id_key_map)
     )
 
     missing_columns = []
@@ -619,38 +700,14 @@ def scan_columns(
         colored_print(
             f"{len(new_columns)} new column(s) mapped successfully.", level="success"
         )
-        columns_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.column_objs"
-            ).generate_statement()
-        )
-        assert isinstance(columns_in_kendo, list)
-        columns_in_kendo = list(
-            map(
-                lambda column: {
-                    **column,
-                    "TABLE_NAME": kendo_table_id_key_map[column["TABLE_ID"]]["name"],
-                    "SCHEMA_ID": kendo_table_id_key_map[column["TABLE_ID"]][
-                        "schema_id"
-                    ],
-                    "SCHEMA_NAME": kendo_schema_id_key_map[
-                        kendo_table_id_key_map[column["TABLE_ID"]]["schema_id"]
-                    ]["name"],
-                    "DATABASE_ID": kendo_table_id_key_map[column["TABLE_ID"]][
-                        "database_id"
-                    ],
-                    "DATABASE_NAME": kendo_db_id_key_map[
-                        kendo_table_id_key_map[column["TABLE_ID"]]["database_id"]
-                    ],
-                },
-                columns_in_kendo,
-            ),
+        columns_in_kendo, kendo_column_id_key_map = (
+            _get_column_objs_in_kendo_with_id_key_map(factory, kendo_table_id_key_map)
         )
 
-    return columns_in_kendo
+    return columns_in_kendo, kendo_column_id_key_map
 
 
-def scan_roles(snowflake_ds, factory):
+def scan_roles(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory):
     colored_print("Scanning roles...", level="info")
     # fetch Roles from SF
     # fetch Roles from Kendo
@@ -662,13 +719,13 @@ def scan_roles(snowflake_ds, factory):
     roles_in_sf = [
         {"name": role["name"], "created_on": role["created_on"]} for role in roles_in_sf
     ]
-    roles_in_kendo = factory.backend_connection.execute(
-        factory.select(table="kendo_db.infrastructure.role_objs").generate_statement()
+    roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map = (
+        _get_role_objs_in_kendo_with_key_maps(factory)
     )
 
     missing_roles = []
     temp_list = [role["name"] for role in roles_in_sf]
-    for role in roles_in_kendo:  # type: ignore
+    for role in roles_in_kendo:
         if role["NAME"] not in temp_list:
             missing_roles.append(role)
     if missing_roles:
@@ -686,7 +743,7 @@ def scan_roles(snowflake_ds, factory):
         )
 
     new_roles = []
-    temp_list = [role["NAME"] for role in roles_in_kendo]  # type: ignore
+    temp_list = [role["NAME"] for role in roles_in_kendo]
     for role in roles_in_sf:
         if role["name"] not in temp_list:
             new_roles.append(role)
@@ -725,18 +782,19 @@ def scan_roles(snowflake_ds, factory):
         colored_print(
             f"{len(new_roles)} new roles mapped successfully.", level="success"
         )
-        roles_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.role_objs"
-            ).generate_statement()
+        roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map = (
+            _get_role_objs_in_kendo_with_key_maps(factory)
         )
-    kendo_role_id_key_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}  # type: ignore
-    kendo_role_name_key_map = {role["NAME"]: role["ID"] for role in roles_in_kendo}  # type: ignore
 
-    return kendo_role_id_key_map, kendo_role_name_key_map
+    return roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map
 
 
-def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
+def scan_users(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    kendo_role_id_key_map=None,
+    kendo_role_name_key_map=None,
+):
     colored_print("Scanning users...", level="info")
     # fetch Users from SF
     # fetch Users from Kendo
@@ -744,9 +802,13 @@ def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
     # prompt to record the new ones
     snowflake_ds.execute("USE ROLE SECURITYADMIN;")
     users_in_sf = snowflake_ds.execute("show users")
-    assert isinstance(users_in_sf, list)
     # switch back to SYSADMIN role
     snowflake_ds.execute("USE ROLE SYSADMIN;")
+    if not kendo_role_id_key_map or not kendo_role_name_key_map:
+        _, kendo_role_id_key_map, kendo_role_name_key_map = (
+            _get_role_objs_in_kendo_with_key_maps(factory)
+        )
+    assert isinstance(users_in_sf, list)
     users_in_sf = [
         {
             "login_name": user["login_name"],
@@ -755,11 +817,11 @@ def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
             "email": user["email"],
             "owner": user["owner"],
             "owner_role_id": (
-                kendo_role_name_key_map[user["owner"]] if user["owner"] else None
+                kendo_role_name_key_map[user["owner"]]["ID"] if user["owner"] else None
             ),
             "default_role": user["default_role"],
             "default_role_id": (
-                kendo_role_name_key_map[user["default_role"]]
+                kendo_role_name_key_map[user["default_role"]]["ID"]
                 if user["default_role"]
                 else None
             ),
@@ -772,12 +834,12 @@ def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
         }
         for user in users_in_sf
     ]
-    users_in_kendo = factory.backend_connection.execute(
-        factory.select(table="kendo_db.infrastructure.user_objs").generate_statement()
+    users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map = (
+        _get_user_objs_in_kendo_with_key_maps(factory, kendo_role_id_key_map)
     )
     missing_users = []
     temp_list = [user["login_name"] for user in users_in_sf]
-    for user in users_in_kendo:  # type: ignore
+    for user in users_in_kendo:
         if user["LOGIN_NAME"] not in temp_list:
             missing_users.append(user)
     if missing_users:
@@ -795,7 +857,7 @@ def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
         )
 
     new_users = []
-    temp_list = [user["LOGIN_NAME"] for user in users_in_kendo]  # type: ignore
+    temp_list = [user["LOGIN_NAME"] for user in users_in_kendo]
     for user in users_in_sf:
         if user["login_name"] not in temp_list:
             new_users.append(user)
@@ -849,34 +911,20 @@ def scan_users(snowflake_ds, factory, kendo_role_name_key_map):
         colored_print(
             f"{len(new_users)} new users mapped successfully.", level="success"
         )
-        users_in_kendo = factory.backend_connection.execute(
-            factory.select(
-                table="kendo_db.infrastructure.user_objs"
-            ).generate_statement()
+        users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map = (
+            _get_user_objs_in_kendo_with_key_maps(factory, kendo_role_id_key_map)
         )
-    kendo_user_id_key_map = {user["ID"]: user["LOGIN_NAME"] for user in users_in_kendo}  # type: ignore
-    kendo_user_name_key_map = {
-        user["LOGIN_NAME"]: user["ID"]
-        for user in users_in_kendo  # type: ignore
-    }
 
-    return kendo_user_id_key_map, kendo_user_name_key_map
+    return users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map
 
 
 def scan_grants_to_roles(
-    snowflake_ds,
-    factory,
-    dbs_in_kendo,
-    schemas_in_kendo,
-    tables_in_kendo,
-    roles_in_kendo,
-    kendo_db_id_key_map,
-    kendo_schema_id_key_map,
-    kendo_table_id_key_full_name_map,
-    kendo_role_id_key_map,
-    kendo_user_id_key_map,
-    kendo_role_name_key_map,
-    kendo_user_name_key_map,
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    dbs_in_kendo=None,
+    schemas_in_kendo=None,
+    tables_in_kendo=None,
+    roles_in_kendo=None,
 ):
     colored_print("Scanning privilege grants to roles...", level="info")
     # create new map for database, schema, table with name as key
@@ -886,27 +934,38 @@ def scan_grants_to_roles(
     # show missing and new
     # prompt to record the new ones
     # insert the new records
-    kendo_db_name_key_map = {db["NAME"]: db["ID"] for db in dbs_in_kendo}  # type: ignore
+    if not dbs_in_kendo:
+        dbs_in_kendo, _ = _get_db_objs_in_kendo_with_id_key_map(factory)
+    if not schemas_in_kendo:
+        schemas_in_kendo, _ = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    if not tables_in_kendo:
+        tables_in_kendo, _ = _get_table_objs_in_kendo_with_id_key_map(factory)
+    if not roles_in_kendo:
+        roles_in_kendo, _, _ = _get_role_objs_in_kendo_with_key_maps(factory)
+    kendo_role_name_key_map = {role["NAME"]: role["ID"] for role in roles_in_kendo}
+    kendo_role_id_key_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}
+    kendo_db_name_key_map = {db["NAME"]: db["ID"] for db in dbs_in_kendo}
+    kendo_db_id_key_map = {db["ID"]: db["NAME"] for db in dbs_in_kendo}
     kendo_schema_name_key_map = {
-        schema["DATABASE_NAME"] + "." + schema["NAME"]: schema["ID"]
+        schema["DATABASE_NAME"] + "." + schema["NAME"]: schema["ID"]  # type: ignore
         for schema in schemas_in_kendo
     }
     kendo_schema_id_key_full_name_map = {
-        schema["ID"]: schema["DATABASE_NAME"] + "." + schema["NAME"]
+        schema["ID"]: schema["DATABASE_NAME"] + "." + schema["NAME"]  # type: ignore
         for schema in schemas_in_kendo
     }
     kendo_table_name_key_map = {
-        table["DATABASE_NAME"]
+        table["DATABASE_NAME"]  # type: ignore
         + "."
-        + table["SCHEMA_NAME"]
+        + table["SCHEMA_NAME"]  # type: ignore
         + "."
         + table["NAME"]: table["ID"]
         for table in tables_in_kendo
     }
     kendo_table_id_key_full_name_map = {
-        table["ID"]: table["DATABASE_NAME"]
+        table["ID"]: table["DATABASE_NAME"]  # type: ignore
         + "."
-        + table["SCHEMA_NAME"]
+        + table["SCHEMA_NAME"]  # type: ignore
         + "."
         + table["NAME"]
         for table in tables_in_kendo
@@ -916,18 +975,16 @@ def scan_grants_to_roles(
         "SCHEMA": kendo_schema_name_key_map,
         "TABLE": kendo_table_name_key_map,
         "ROLE": kendo_role_name_key_map,
-        "USER": kendo_user_name_key_map,
     }
     kendo_all_obj_id_key_map = {
         "DATABASE": kendo_db_id_key_map,
         "SCHEMA": kendo_schema_id_key_full_name_map,
         "TABLE": kendo_table_id_key_full_name_map,
         "ROLE": kendo_role_id_key_map,
-        "USER": kendo_user_id_key_map,
     }
     privilege_grants_in_sf = []
     skipped_privilege_grants_on = set()
-    for role in roles_in_kendo:  # type: ignore
+    for role in roles_in_kendo:
         if role["NAME"].lower() in exclusion_rules.get("roles", []):
             # skipping grants to internal roles
             continue
@@ -972,24 +1029,19 @@ def scan_grants_to_roles(
             level="warning",
         )
         print(skipped_privilege_grants_on)
-    privilege_grants_in_kendo = factory.backend_connection.execute(
-        factory.select(
-            table="kendo_db.infrastructure.grants_privilege_objs",
-        ).generate_statement()
-    )
-    assert isinstance(privilege_grants_in_kendo, list)
-    privilege_grants_in_kendo = list(
-        map(
-            lambda grant: {
-                **grant,
-                "GRANTED_ON_NAME": kendo_all_obj_id_key_map[grant["GRANTED_ON"]][
-                    grant["GRANTED_ON_ID"]
-                ],
-                "GRANTED_TO_NAME": kendo_role_id_key_map[grant["GRANTED_TO_ID"]],
-            },
-            privilege_grants_in_kendo,
+    privilege_grants_in_kendo = cast(
+        List[PrivilegeGrantObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.grants_privilege_objs",
+            ).generate_statement()
         ),
     )
+    for privilege in privilege_grants_in_kendo:
+        privilege["GRANTED_ON_NAME"] = kendo_all_obj_id_key_map[
+            privilege["GRANTED_ON"]
+        ][privilege["GRANTED_ON_ID"]]
+        privilege["GRANTED_TO_NAME"] = kendo_role_id_key_map[privilege["GRANTED_TO_ID"]]
     missing_grants = []
     # matching by booleans like grant["grant_option"] doesn't work
     temp_list = [
@@ -1095,26 +1147,41 @@ def scan_grants_to_roles(
             f"{len(new_grants)} new privilege grant(s) mapped successfully.",
             level="success",
         )
-    
-    return kendo_all_obj_id_key_map, kendo_all_obj_name_key_map
+    return
 
 
 def scan_role_grants(
-    snowflake_ds,
-    factory,
-    roles_in_kendo,
-    kendo_role_name_key_map,
-    kendo_all_obj_name_key_map,
-    kendo_role_id_key_map,
-    kendo_all_obj_id_key_map,
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    users_in_kendo=None,
+    roles_in_kendo=None,
 ):
+    if not users_in_kendo:
+        users_in_kendo, _, _ = _get_user_objs_in_kendo_with_key_maps(factory)
+    if not roles_in_kendo:
+        roles_in_kendo, _, _ = _get_role_objs_in_kendo_with_key_maps(factory)
+
+    kendo_role_name_key_map = {role["NAME"]: role["ID"] for role in roles_in_kendo}
+    kendo_role_id_key_map = {role["ID"]: role["NAME"] for role in roles_in_kendo}
+    kendo_user_login_name_key_map = {
+        user["LOGIN_NAME"]: user["ID"] for user in users_in_kendo
+    }
+    kendo_user_id_key_map = {user["ID"]: user["LOGIN_NAME"] for user in users_in_kendo}
+    kendo_all_obj_name_key_map = {
+        "ROLE": kendo_role_name_key_map,
+        "USER": kendo_user_login_name_key_map,
+    }
+    kendo_all_obj_id_key_map = {
+        "ROLE": kendo_role_id_key_map,
+        "USER": kendo_user_id_key_map,
+    }
     colored_print("Scanning role grants...", level="info")
     # fetch grants from sf
     # fetch grants from kendo
     # show missing and new
     # prompt to record the new ones
     role_grants_in_sf = []
-    for role in roles_in_kendo:  # type: ignore
+    for role in roles_in_kendo:
         grants_of_this_role = snowflake_ds.execute(
             f"show grants of role {role['NAME']}",
         )
@@ -1139,29 +1206,24 @@ def scan_role_grants(
             for grant in grants_of_this_role
         ]
         role_grants_in_sf.extend(grants_of_this_role)
-    role_grants_in_kendo = factory.backend_connection.execute(
-        factory.select(
-            table="kendo_db.infrastructure.grants_role_objs",
-        ).generate_statement()
-    )
-    assert isinstance(role_grants_in_kendo, list)
-    role_grants_in_kendo = list(
-        map(
-            lambda grant: {
-                **grant,
-                "ROLE": kendo_role_id_key_map[grant["ROLE_ID"]],
-                "GRANTEE_NAME": kendo_all_obj_id_key_map[grant["GRANTED_TO"]][
-                    grant["GRANTED_TO_ID"]
-                ],
-                "GRANTED_BY": (
-                    kendo_role_id_key_map[grant["GRANTED_BY_ROLE_ID"]]
-                    if grant["GRANTED_BY_ROLE_ID"]
-                    else None
-                ),
-            },
-            role_grants_in_kendo,
+    role_grants_in_kendo = cast(
+        List[RoleGrantObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.grants_role_objs",
+            ).generate_statement()
         ),
     )
+    for role_grant in role_grants_in_kendo:
+        role_grant["ROLE"] = kendo_role_id_key_map[role_grant["ROLE_ID"]]
+        role_grant["GRANTEE_NAME"] = kendo_all_obj_id_key_map[role_grant["GRANTED_TO"]][
+            role_grant["GRANTED_TO_ID"]
+        ]
+        if role_grant["GRANTED_BY_ROLE_ID"]:  # type: ignore
+            role_grant["GRANTED_BY"] = kendo_role_id_key_map[
+                role_grant["GRANTED_BY_ROLE_ID"]  # type: ignore
+            ]
+
     missing_role_grants = []
     temp_list = [
         (
@@ -1173,7 +1235,7 @@ def scan_role_grants(
     ]
     for grant in role_grants_in_kendo:
         if (
-            grant["ROLE"],
+            grant["ROLE"],  # type: ignore
             grant["GRANTED_TO"],
             grant["GRANTED_TO_ID"],
         ) not in temp_list:
@@ -1195,7 +1257,7 @@ def scan_role_grants(
     new_role_grants = []
     temp_list = [
         (
-            grant["ROLE"],
+            grant["ROLE"],  # type: ignore
             grant["GRANTED_TO"],
             grant["GRANTED_TO_ID"],
         )
@@ -1268,60 +1330,28 @@ def scan_infra(object_type):
     colored_print("Scanning Snowflake infrastructure...", level="info")
 
     if object_type == "databases":
-        dbs_in_kendo, kendo_db_id_key_map = scan_databases(snowflake_ds, factory)
+        scan_databases(snowflake_ds, factory)
 
     if object_type == "schemas":
-        schemas_in_kendo, kendo_schema_id_key_map = scan_schemas(
-            snowflake_ds, factory, kendo_db_id_key_map, dbs_in_kendo
-        )
+        scan_schemas(snowflake_ds, factory)
 
     if object_type == "tables":
-        tables_in_kendo, kendo_table_id_key_map = scan_tables(
-            snowflake_ds,
-            factory,
-            schemas_in_kendo,
-            kendo_schema_id_key_map,
-            kendo_db_id_key_map,
-        )
+        scan_tables(snowflake_ds, factory)
 
     if object_type == "columns":
-        scan_columns(
-            snowflake_ds,
-            factory,
-            tables_in_kendo,
-            kendo_table_id_key_map,
-            kendo_schema_id_key_map,
-            kendo_db_id_key_map,
-        )
+        scan_columns(snowflake_ds, factory)
 
     if object_type == "roles":
-        roles_in_kendo, kendo_role_id_key_map, kendo_role_name_key_map = scan_roles(
-            snowflake_ds, factory
-        )
+        scan_roles(snowflake_ds, factory)
 
     if object_type == "users":
-        kendo_user_id_key_map, kendo_user_name_key_map = scan_users(
-            snowflake_ds, factory, kendo_role_name_key_map
-        )
+        scan_users(snowflake_ds, factory)
 
     if object_type == "grants_to_roles":
-        # TODO: this is ridiculous, need to fix
-        scan_grants_to_roles(
-            snowflake_ds,
-            factory,
-            dbs_in_kendo,
-            tables_in_kendo,
-            roles_in_kendo,
-            kendo_db_id_key_map,
-            kendo_table_id_key_map,
-            kendo_role_id_key_map,
-            kendo_user_id_key_map,
-            kendo_role_name_key_map,
-            kendo_user_name_key_map,
-        )
+        scan_grants_to_roles(snowflake_ds, factory)
 
     if object_type == "role_grants":
-        scan_role_grants(snowflake_ds, factory, roles_in_kendo, kendo_role_name_key_map, kendo_all_obj_id_key_map, kendo_role_id_key_map, kendo_all_obj_id_key_map)
+        scan_role_grants(snowflake_ds, factory)
 
     snowflake_ds.close_session()
     factory.backend_connection.close_session()
