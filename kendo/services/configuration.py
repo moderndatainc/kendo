@@ -914,10 +914,10 @@ def scan_infra():
             if grant["granted_on"] in ["DATABASE", "SCHEMA", "TABLE"]:
                 if (
                     grant["granted_on"] == "DATABASE"
-                    and grant["name"] in exclusion_rules.get("databases", [])
+                    and grant["name"].lower() in exclusion_rules.get("databases", [])
                 ) or (
                     grant["granted_on"] == "SCHEMA"
-                    and grant["name"] in exclusion_rules.get("schemas", [])
+                    and grant["name"].lower() in exclusion_rules.get("schemas", [])
                 ):
                     # skipping grants on excluded objects
                     continue
