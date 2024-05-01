@@ -18,6 +18,12 @@ from .services.tags import (
     show_tags as show_tags_service,
     set_tag as set_tag_service,
 )
+from .services.test import (
+    execute_tests,
+    list_tests
+)
+
+
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -101,6 +107,19 @@ def scan_infra(object_type: Annotated[str, typer.Argument()]):
 
     scan_infra_service(object_type)
 
+@app.command()
+def test(cmd_type: Annotated[str, typer.Argument()], datasource_connection_name: Annotated[Optional[str], typer.Option()] = "default"):
+    """
+    Run tests.
+    """
+    if cmd_type == 'list':
+        tests = list_tests()
+        for test in tests:
+            print(test)
+
+    if cmd_type == 'run':
+        execute_tests(datasource_connection_name)
+    
 
 @app.command()
 def create_tag(
