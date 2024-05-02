@@ -255,6 +255,7 @@ def scan_databases(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory
     # insert the new records
     # select all records and store in memory, id will be needed
     dbs_in_sf = snowflake_ds.execute("show databases")
+    print(dbs_in_sf)
     assert isinstance(dbs_in_sf, list)
     dbs_in_sf = [
         {"name": db["name"], "created_on": db["created_on"]}

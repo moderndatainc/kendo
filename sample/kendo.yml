@@ -14,6 +14,14 @@ tests:
     escape_hatch: true
     exit-status: 0
   
+
+  - name: "Check if all any databases are owned by ACCOUNTADMIN"
+    type: "sql"
+    sql: "SELECT * from kendo_db.infrastructure.database_objs where OWNER = 'ACCOUNTADMIN';"
+    expected: None
+    escape_hatch: true
+    exit-status: 0
+  
   - name: "Check all warehouses have auto_suspend turned on"
     type: "sql"
     sql: "SELECT
