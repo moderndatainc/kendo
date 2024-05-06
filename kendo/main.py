@@ -2,6 +2,7 @@ from pathlib import Path
 import typer
 from typing_extensions import Annotated
 from typing import List, Optional
+from rich import print
 
 from kendo.schemas.enums import BackendProvider
 from .services.security_clearance import (

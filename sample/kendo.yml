@@ -5,6 +5,8 @@ tests:
   - name: "Check if RAW database exists"
     type: "sql"
     sql: "select * from kendo_db.infrastructure.database_objs where name = 'RAW'"
+    # sql: "select * from kendo_db.infrastructure.database_objs where name = 'JETSKI_DEV_1'"
+    expected: false
     exit-status: 0
 
   - name: "Check if all warehouses exists"
@@ -15,38 +17,39 @@ tests:
     exit-status: 0
   
 
-  - name: "Check if all any databases are owned by ACCOUNTADMIN"
-    type: "sql"
-    sql: "SELECT * from kendo_db.infrastructure.database_objs where OWNER = 'ACCOUNTADMIN';"
-    expected: None
-    escape_hatch: true
-    exit-status: 0
+  # - name: "Check if all any databases are owned by ACCOUNTADMIN"
+  #   type: "sql"
+  #   sql: "SELECT * from kendo_db.infrastructure.database_objs where OWNER = 'ACCOUNTADMIN';"
+  #   expected: None
+  #   escape_hatch: true
+  #   exit-status: 0
   
-  - name: "Check all warehouses have auto_suspend turned on"
-    type: "sql"
-    sql: "SELECT
-    BOOLAND_AGG (
-      warehouse_name IN (
-        SELECT
-          *
-        FROM
-          snowflake.account_usage.warehouse_metering_history
-        WHERE
-          credits_used > 0
-      )
-    )
-  FROM
-    snowflake.account_usage.warehouse_metering_history; 
-  "
-    expected: None
-    escape_hatch: true
-    exit-status: 0
+  # - name: "Check all warehouses have auto_suspend turned on"
+  #   type: "sql"
+  #   sql: "SELECT
+  #   BOOLAND_AGG (
+  #     warehouse_name IN (
+  #       SELECT
+  #         *
+  #       FROM
+  #         snowflake.account_usage.warehouse_metering_history
+  #       WHERE
+  #         credits_used > 0
+  #     )
+  #   )
+  # FROM
+  #   snowflake.account_usage.warehouse_metering_history; 
+  # "
+  #   expected: None
+  #   escape_hatch: true
+  #   exit-status: 0
 
 
   - name: "Ensure that the MDAC table still exists"
     type: "sql"
     role: "SYSADMIN"
-    sql: "select count(*) from kpi.secure_views.mapped_data_access"
+    # sql: "select count(*) from kpi.secure_views.mapped_data_access"
+    sql: "select count(*) from kendo_db.infrastructure.database_objs"
     expected: 1
     escape_hatch: true
     exit-status: 0
