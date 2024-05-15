@@ -88,7 +88,7 @@ def show_required_grants():
 
 
 @app.command()
-def scan_infra(object_type: Annotated[str, typer.Argument()]):
+def scan(object_type: Annotated[str, typer.Argument()]):
     """
     Scan Snowflake infrastructure.
     """
@@ -101,6 +101,7 @@ def scan_infra(object_type: Annotated[str, typer.Argument()]):
         "roles",
         "grants_to_roles",
         "role_grants",
+        "all",
     ]  # TODO: move to config
 
     assert object_type is not None
