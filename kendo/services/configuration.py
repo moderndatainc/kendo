@@ -1354,5 +1354,15 @@ def scan_infra(object_type):
     if object_type == "role_grants":
         scan_role_grants(snowflake_ds, factory)
 
+    if object_type == "all":
+        scan_databases(snowflake_ds, factory)
+        scan_schemas(snowflake_ds, factory)
+        scan_tables(snowflake_ds, factory)
+        scan_columns(snowflake_ds, factory)
+        scan_roles(snowflake_ds, factory)
+        scan_users(snowflake_ds, factory)
+        scan_grants_to_roles(snowflake_ds, factory)
+        scan_role_grants(snowflake_ds, factory)
+
     snowflake_ds.close_session()
     factory.backend_connection.close_session()
