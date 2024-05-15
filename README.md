@@ -3,7 +3,7 @@
 
 ## Setup
 
-Along side the dependencies, this will also install the CLI inside the virtual environment.
+Along side the dependencies, the command below will also install the CLI inside the virtual environment.
 ```
 $ poetry install
 ```
@@ -21,18 +21,25 @@ password = "yourpass"
 ```
 $ poetry shell
 $ kendo --help
-$ kendo snowflake --help
-$ kendo snowflake session-details
 ```
 
+The first command that should be run is `configure`. Because that will setup a configuration file in `~/.kendo/config.toml`.
+```
+$ kendo configure
+```
+
+### Scan datasource infrastructure
+```
+$ kendo scan-infra
+```
 
 ### Tags
 Create a tag with any allowed values.
 ```
-$ kendo snowflake create-tag country
+$ kendo create-tag country
 ```
 
 Create a tag with specific allowed values.
 ```
-$ kendo snowflake create-tag country US CA 'Cayman Islands'
+$ kendo create-tag country US CA 'Cayman Islands'
 ```

@@ -1,0 +1,15 @@
+raw_exists: # name of policy
+  description: "Check if a database exists"
+  severity: "high"
+  remediation: "rollback"
+  match:
+    - type: "path"
+      value: "/etc/hosts"
+  tags:
+    - "security"
+    - "filesystem"
+  reference: "https://example.com/docs/policies/raw_exists"
+  sql: 
+    - "SELECT * FROM  WHERE path = '/etc/hosts';"
+  expects: 
+    1
