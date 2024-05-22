@@ -18,6 +18,7 @@ from kendo.schemas.mapped_objs import (
     RoleGrantObj,
     RoleObj,
     SchemaObj,
+    StageObj,
     TableObj,
     UserObj,
     WarehouseObj,
@@ -168,6 +169,34 @@ def _get_table_objs_in_kendo_with_id_key_map(
         table["ID"]: table for table in tables_in_kendo
     }
     return tables_in_kendo, kendo_table_id_key_map
+
+
+def _get_stage_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[StageObj], Dict[int, StageObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    stages_in_kendo = cast(
+        List[StageObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.stage_objs"
+            ).generate_statement()
+        ),
+    )
+    for stage in stages_in_kendo:
+        stage["SCHEMA_NAME"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]]["NAME"]
+        stage["DATABASE_ID"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]][
+            "DATABASE_ID"
+        ]
+        stage["DATABASE_NAME"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_stage_id_key_map: Dict[int, StageObj] = {
+        stage["ID"]: stage for stage in stages_in_kendo
+    }
+    return stages_in_kendo, kendo_stage_id_key_map
 
 
 def _get_column_objs_in_kendo_with_id_key_map(
@@ -1457,6 +1486,130 @@ def scan_role_grants(
         )
 
 
+def scan_stages(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+):
+    colored_print("Scanning stages...", level="info")
+    stages_in_sf = []
+    skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
+    for schema in schemas_in_kendo:
+        stages_in_this_schema = snowflake_ds.execute(
+            f"show stages in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+            abort_on_exception=False,
+        )
+        if isinstance(stages_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+                    "type": "schema",
+                    "error": stages_in_this_schema.message,
+                }
+            )
+            continue
+        stages_in_this_schema = [
+            {
+                "name": stage["name"],
+                "created_on": stage["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
+            }
+            for stage in stages_in_this_schema
+        ]
+        stages_in_sf.extend(stages_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Stages could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding stages from these schemas?",
+            abort=True,
+        )
+
+    stages_in_kendo, kendo_stage_id_key_map = _get_stage_objs_in_kendo_with_id_key_map(
+        factory, kendo_schema_id_key_map
+    )
+
+    missing_stages = []
+    temp_list = [(stage["name"], stage["schema_id"]) for stage in stages_in_sf]
+    for stage in stages_in_kendo:
+        if (stage["NAME"], stage["SCHEMA_ID"]) not in temp_list:
+            missing_stages.append(stage)
+    if missing_stages:
+        colored_print(
+            f"{len(missing_stages)} stage(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Stage mappings: ", level="info")
+            print(missing_stages)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_stages = []
+    temp_list = [(stage["NAME"], stage["SCHEMA_ID"]) for stage in stages_in_kendo]
+    for stage in stages_in_sf:
+        if (stage["name"], stage["schema_id"]) not in temp_list:
+            new_stages.append(stage)
+    if new_stages:
+        colored_print(
+            f"{len(new_stages)} new stage(s) detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Stages: ", level="info")
+            print(new_stages)
+        typer.confirm(
+            "Are you sure you want these new stages to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new stages...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.stage_objs",
+                columns=["obj_created_on", "name", "schema_id"],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", stage["created_on"]),
+                    stage["name"],
+                    stage["schema_id"],
+                )
+                for stage in new_stages
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_stages)} new stage(s) mapped successfully.", level="success"
+        )
+        stages_in_kendo, kendo_stage_id_key_map = (
+            _get_stage_objs_in_kendo_with_id_key_map(factory, kendo_schema_id_key_map)
+        )
+
+    return stages_in_kendo, kendo_stage_id_key_map
+
+
 def scan_infra(object_type: Resources):
     config_doc = get_kendo_config_or_raise_error()
     factory = Factory(config_doc)
@@ -1495,10 +1648,14 @@ def scan_infra(object_type: Resources):
     if object_type == Resources.warehouses:
         scan_warehouses(snowflake_ds, factory)
 
+    if object_type == Resources.stages:
+        scan_stages(snowflake_ds, factory)
+
     if object_type == Resources.all:
         scan_databases(snowflake_ds, factory)
         scan_schemas(snowflake_ds, factory)
         scan_tables(snowflake_ds, factory)
+        scan_stages(snowflake_ds, factory)
         scan_columns(snowflake_ds, factory)
         scan_roles(snowflake_ds, factory)
         scan_users(snowflake_ds, factory)
