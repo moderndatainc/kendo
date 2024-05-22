@@ -81,3 +81,13 @@ class RoleGrantObj(TypedDict):
     GRANTEE_NAME: NotRequired[str]
     GRANTED_BY_ROLE_ID: NotRequired[int]
     GRANTED_BY: NotRequired[str]
+
+
+class WarehouseObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    TYPE: str
+    SIZE: str
+    OWNER_ROLE_ID: NotRequired[int]
+    OWNER_ROLE_NAME: NotRequired[str]

@@ -8,5 +8,22 @@ class TagableType(Enum):
     COLUMN = "column"
     VIEW = "view"
 
+
 class BackendProvider(str, Enum):
     snowflake = "snowflake"
+
+
+class Resources(str, Enum):
+    databases = "databases"
+    schemas = "schemas"
+    tables = "tables"
+    columns = "columns"
+    users = "users"
+    roles = "roles"
+    grants_to_roles = "grants_to_roles"
+    role_grants = "role_grants"
+    warehouses = "warehouses"
+    stages = "stages"
+    stream = "stream"
+    pipes = "pipes"
+    all = "all"

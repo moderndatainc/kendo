@@ -80,4 +80,12 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.grants_role_objs (
     granted_to_id INT NOT NULL,
     granted_by_role_id INT NULL
 );
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.warehouse_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL,
+    size VARCHAR NOT NULL,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    owner_role_id INT NULL
+);
 """
