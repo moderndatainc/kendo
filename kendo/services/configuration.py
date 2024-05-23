@@ -23,6 +23,7 @@ from kendo.schemas.mapped_objs import (
     StreamObj,
     TableObj,
     UserObj,
+    ViewObj,
     WarehouseObj,
 )
 from kendo.services.common import get_kendo_config_or_raise_error
@@ -171,6 +172,32 @@ def _get_table_objs_in_kendo_with_id_key_map(
         table["ID"]: table for table in tables_in_kendo
     }
     return tables_in_kendo, kendo_table_id_key_map
+
+
+def _get_view_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[ViewObj], Dict[int, ViewObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    views_in_kendo = cast(
+        List[ViewObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.view_objs"
+            ).generate_statement()
+        ),
+    )
+    for view in views_in_kendo:
+        view["SCHEMA_NAME"] = kendo_schema_id_key_map[view["SCHEMA_ID"]]["NAME"]
+        view["DATABASE_ID"] = kendo_schema_id_key_map[view["SCHEMA_ID"]]["DATABASE_ID"]
+        view["DATABASE_NAME"] = kendo_schema_id_key_map[view["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_view_id_key_map: Dict[int, ViewObj] = {
+        view["ID"]: view for view in views_in_kendo
+    }
+    return views_in_kendo, kendo_view_id_key_map
 
 
 def _get_stage_objs_in_kendo_with_id_key_map(
@@ -688,6 +715,129 @@ def scan_tables(
         )
 
     return tables_in_kendo, kendo_table_id_key_map
+
+
+def scan_views(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+):
+    colored_print("Scanning views...", level="info")
+    views_in_sf = []
+    skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
+    for schema in schemas_in_kendo:
+        views_in_this_schema = snowflake_ds.execute(
+            f"show views in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+            abort_on_exception=False,
+        )
+        if isinstance(views_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+                    "type": "schema",
+                    "error": views_in_this_schema.message,
+                }
+            )
+            continue
+        views_in_this_schema = [
+            {
+                "name": view["name"],
+                "created_on": view["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
+            }
+            for view in views_in_this_schema
+        ]
+        views_in_sf.extend(views_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Views could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding views from these schemas?",
+            abort=True,
+        )
+    views_in_kendo, kendo_view_id_key_map = _get_view_objs_in_kendo_with_id_key_map(
+        factory, kendo_schema_id_key_map
+    )
+
+    missing_views = []
+    temp_list = [(view["name"], view["schema_id"]) for view in views_in_sf]
+    for view in views_in_kendo:
+        if (view["NAME"], view["SCHEMA_ID"]) not in temp_list:
+            missing_views.append(view)
+    if missing_views:
+        colored_print(
+            f"{len(missing_views)} view(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing View mappings: ", level="info")
+            print(missing_views)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_views = []
+    temp_list = [(view["NAME"], view["SCHEMA_ID"]) for view in views_in_kendo]
+    for view in views_in_sf:
+        if (view["name"], view["schema_id"]) not in temp_list:
+            new_views.append(view)
+    if new_views:
+        colored_print(
+            f"{len(new_views)} new view(s) detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Views: ", level="info")
+            print(new_views)
+        typer.confirm(
+            "Are you sure you want these new views to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new views...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.view_objs",
+                columns=["obj_created_on", "name", "schema_id"],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", view["created_on"]),
+                    view["name"],
+                    view["schema_id"],
+                )
+                for view in new_views
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_views)} new view(s) mapped successfully.", level="success"
+        )
+        views_in_kendo, kendo_view_id_key_map = _get_view_objs_in_kendo_with_id_key_map(
+            factory, kendo_schema_id_key_map
+        )
+
+    return views_in_kendo, kendo_view_id_key_map
 
 
 def scan_columns(
@@ -1935,6 +2085,9 @@ def scan_infra(object_type: Resources):
 
     if object_type == Resources.tables:
         scan_tables(snowflake_ds, factory)
+    
+    if object_type == Resources.views:
+        scan_views(snowflake_ds, factory)
 
     if object_type == Resources.columns:
         scan_columns(snowflake_ds, factory)
@@ -1967,6 +2120,7 @@ def scan_infra(object_type: Resources):
         scan_databases(snowflake_ds, factory)
         scan_schemas(snowflake_ds, factory)
         scan_tables(snowflake_ds, factory)
+        scan_views(snowflake_ds, factory)
         scan_stages(snowflake_ds, factory)
         scan_columns(snowflake_ds, factory)
         scan_roles(snowflake_ds, factory)

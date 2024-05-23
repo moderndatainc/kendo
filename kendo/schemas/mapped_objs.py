@@ -26,6 +26,16 @@ class TableObj(TypedDict):
     DATABASE_NAME: NotRequired[str]
 
 
+class ViewObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
 class StageObj(TypedDict):
     ID: int
     OBJ_CREATED_ON: NotRequired[datetime]

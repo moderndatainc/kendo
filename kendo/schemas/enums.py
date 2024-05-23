@@ -26,4 +26,5 @@ class Resources(str, Enum):
     stages = "stages"
     streams = "streams"
     pipes = "pipes"
+    views = "views"
     all = "all"
