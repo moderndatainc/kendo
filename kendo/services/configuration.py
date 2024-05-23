@@ -271,9 +271,15 @@ def _get_column_objs_in_kendo_with_id_key_map(
     for column in columns_in_kendo:
         column["TABLE_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["NAME"]
         column["SCHEMA_ID"] = kendo_table_id_key_map[column["TABLE_ID"]]["SCHEMA_ID"]
-        column["SCHEMA_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["SCHEMA_NAME"]  # type: ignore
-        column["DATABASE_ID"] = kendo_table_id_key_map[column["TABLE_ID"]]["DATABASE_ID"]  # type: ignore
-        column["DATABASE_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]]["DATABASE_NAME"]  # type: ignore
+        column["SCHEMA_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]][
+            "SCHEMA_NAME"
+        ]  # type: ignore
+        column["DATABASE_ID"] = kendo_table_id_key_map[column["TABLE_ID"]][
+            "DATABASE_ID"
+        ]  # type: ignore
+        column["DATABASE_NAME"] = kendo_table_id_key_map[column["TABLE_ID"]][
+            "DATABASE_NAME"
+        ]  # type: ignore
 
     kendo_column_id_key_map: Dict[int, ColumnObj] = {
         column["ID"]: column for column in columns_in_kendo
@@ -347,7 +353,9 @@ def _get_warehouse_objs_in_kendo_with_key_maps(
     )
     for warehouse in warehouses_in_kendo:
         if warehouse["OWNER_ROLE_ID"]:  # type: ignore
-            warehouse["OWNER_ROLE_NAME"] = kendo_role_id_key_map[warehouse["OWNER_ROLE_ID"]][  # type: ignore
+            warehouse["OWNER_ROLE_NAME"] = kendo_role_id_key_map[
+                warehouse["OWNER_ROLE_ID"]
+            ][  # type: ignore
                 "NAME"
             ]
     kendo_warehouse_id_key_map: Dict[int, WarehouseObj] = {
@@ -594,6 +602,7 @@ def scan_tables(
                 }
             )
             continue
+        print(tables_in_this_schema)
         tables_in_this_schema = [
             {
                 "name": table["name"],
@@ -602,6 +611,28 @@ def scan_tables(
                 "schema_name": schema["NAME"],
                 "database_id": schema["DATABASE_ID"],
                 "database_name": schema["DATABASE_NAME"],  # type: ignore
+                "kind": table["kind"],
+                "comment": table["comment"],
+                "cluster_by": table["cluster_by"],
+                "rows": table["rows"],
+                "bytes": table["bytes"],
+                "owner": table["owner"],
+                "retention_time": table["retention_time"],
+                "automatic_clustering": table["automatic_clustering"],
+                "change_tracking": table["change_tracking"],
+                "search_optimization": table["search_optimization"],
+                "search_optimization_progress": table["search_optimization_progress"],
+                "is_external": table["is_external"],
+                "enable_schema_evolution": table["enable_schema_evolution"],
+                "owner_role_type": table["owner_role_type"],
+                "is_event": table["is_event"],
+                "budget": table["budget"],
+                "is_hybrid": table["is_hybrid"],
+                "is_iceberg": table["is_iceberg"],
+                "is_dynamic": table["is_dynamic"],
+                "ddl": snowflake_ds.execute(
+                    f"SELECT GET_DDL('table', '{schema['DATABASE_NAME']}.{schema['NAME']}.{table['name']}') as DDL"
+                )[0]["DDL"],
             }
             for table in tables_in_this_schema
         ]
@@ -667,13 +698,63 @@ def scan_tables(
             progress.add_task(description="Mapping new tables...", total=None)
             i_insert = factory.paramized_insert(
                 table="kendo_db.infrastructure.table_objs",
-                columns=["obj_created_on", "name", "schema_id"],
+                columns=[
+                    "obj_created_on",
+                    "name",
+                    "schema_id",
+                    "schema_name",
+                    "database_id",
+                    "database_name",
+                    "kind",
+                    "comment",
+                    "cluster_by",
+                    "rows",
+                    "bytes",
+                    "owner",
+                    "retention_time",
+                    "automatic_clustering",
+                    "change_tracking",
+                    "search_optimization",
+                    "search_optimization_progress",
+                    "is_external",
+                    "enable_schema_evolution",
+                    "owner_role_type",
+                    "is_event",
+                    "budget",
+                    "is_hybrid",
+                    "is_iceberg",
+                    "is_dynamic",
+                    "ddl",
+                ],
             )
             data = [
                 (
                     ("TIMESTAMP_LTZ", table["created_on"]),
                     table["name"],
                     table["schema_id"],
+                    table["schema_name"],
+                    table["database_id"],
+                    table["database_name"],
+                    table["kind"],
+                    table["comment"],
+                    table["cluster_by"],
+                    table["rows"],
+                    table["bytes"],
+                    table["owner"],
+                    table["retention_time"],
+                    table["automatic_clustering"],
+                    table["change_tracking"],
+                    table["search_optimization"],
+                    table["search_optimization_progress"],
+                    table["is_external"],
+                    table["enable_schema_evolution"],
+                    table["owner_role_type"],
+                    table["is_event"],
+                    table["budget"],
+                    table["is_hybrid"],
+                    table["is_iceberg"],
+                    table["is_dynamic"],
+                    table["ddl"],
                 )
                 for table in new_tables
             ]

@@ -49,7 +49,7 @@ class SnowflakeBackendConnection(IBackendConnection):
         self,
         sql,
         list_of_sql_params=None,
-        print_sql=False,
+        print_sql=True,
         abort_on_exception=True,
     ):
         with self.session.cursor(DictCursor) as cur:
