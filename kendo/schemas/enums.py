@@ -24,6 +24,6 @@ class Resources(str, Enum):
     role_grants = "role_grants"
     warehouses = "warehouses"
     stages = "stages"
-    stream = "stream"
+    streams = "streams"
     pipes = "pipes"
     all = "all"

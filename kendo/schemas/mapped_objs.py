@@ -36,6 +36,27 @@ class StageObj(TypedDict):
     DATABASE_NAME: NotRequired[str]
 
 
+class StreamObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    TABLE_NAME: NotRequired[str]
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
+class PipeObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
 class ColumnObj(TypedDict):
     ID: int
     OBJ_CREATED_ON: NotRequired[datetime]
