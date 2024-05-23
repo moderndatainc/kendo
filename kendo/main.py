@@ -25,7 +25,6 @@ from .services.test import (
 )
 
 
-
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
@@ -34,23 +33,15 @@ def callback():
     pass
 
 
-# @app.command()
-# def develop():
-#     """
-#     Developer command.
-#     """
-#     print("Hello World!")
-
-
 @app.command()
-def configure(
+def init(
     backend_provider: Annotated[
         Optional[BackendProvider], typer.Option()
     ] = BackendProvider.snowflake,
     datasource_connection_name: Annotated[Optional[str], typer.Option()] = "default",
 ):
     """
-    Setup local config and backend database required for managing Access Control.
+    Setup local config backend required for managing Access Control.
     """
     assert backend_provider is not None
     assert datasource_connection_name is not None
