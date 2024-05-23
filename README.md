@@ -51,6 +51,41 @@ Runs idempotent scans for all securable objects in Snowflake, and creates an int
 $ kendo scan
 ```
 
+### Test for policy violations [WIP]
+
+#### Define policies
+
+Create a YAML file (kendo_policies.yaml) to define your infrastructure tests and policies. Here is an example:
+
+```yaml
+
+tests:
+  - name: check-raw-database-exists
+    description: "Verifies if the RAW database exists in the infrastructure."
+    type: unit
+    resource: snowflake.database
+    sql: "select count(*) from kendo_db.infrastructure.database_objs where name = 'RAW'"
+    expected: 1
+
+policies:
+  - name: enforce-database-naming-convention
+    description: |
+      Ensures that all databases follow the naming convention 'DB_<project>_<env>'.
+    resource: snowflake.database
+    filters:
+      - type: sql
+        query: "SELECT database_name FROM information_schema.databases WHERE database_name NOT LIKE 'DB_%_%';"
+        expected: []
+    actions:
+      - type: alert
+        message: "Databases not following naming convention detected: {{result}}"
+```
+
+
+```
+$ kendo test run
+```
+
 
 #### Resource support (format borrowed from https://github.com/Titan-Systems/titan.git)
 
