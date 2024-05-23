@@ -354,10 +354,8 @@ def _get_warehouse_objs_in_kendo_with_key_maps(
     for warehouse in warehouses_in_kendo:
         if warehouse["OWNER_ROLE_ID"]:  # type: ignore
             warehouse["OWNER_ROLE_NAME"] = kendo_role_id_key_map[
-                warehouse["OWNER_ROLE_ID"]
-            ][  # type: ignore
-                "NAME"
-            ]
+                warehouse["OWNER_ROLE_ID"]  # type: ignore
+            ]["NAME"]
     kendo_warehouse_id_key_map: Dict[int, WarehouseObj] = {
         warehouse["ID"]: warehouse for warehouse in warehouses_in_kendo
     }
@@ -573,6 +571,8 @@ def scan_tables(
     factory: Factory,
     schemas_in_kendo: List[SchemaObj] | None = None,
     kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+    kendo_role_id_key_map: Dict[int, RoleObj] | None = None,
+    kendo_role_name_key_map: Dict[str, RoleObj] | None = None,
 ):
     colored_print("Scanning tables...", level="info")
     # fetch Tables from SF
@@ -588,6 +588,10 @@ def scan_tables(
         schemas_in_kendo, kendo_schema_id_key_map = (
             _get_schema_objs_in_kendo_with_id_key_map(factory)
         )
+    if not kendo_role_id_key_map or not kendo_role_name_key_map:
+        _, kendo_role_id_key_map, kendo_role_name_key_map = (
+            _get_role_objs_in_kendo_with_key_maps(factory)
+        )
     for schema in schemas_in_kendo:
         tables_in_this_schema = snowflake_ds.execute(
             f"show tables in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
@@ -602,7 +606,7 @@ def scan_tables(
                 }
             )
             continue
-        print(tables_in_this_schema)
+
         tables_in_this_schema = [
             {
                 "name": table["name"],
@@ -614,14 +618,21 @@ def scan_tables(
                 "kind": table["kind"],
                 "comment": table["comment"],
                 "cluster_by": table["cluster_by"],
-                "rows": table["rows"],
-                "bytes": table["bytes"],
+                "num_rows": table["rows"],
+                "num_bytes": table["bytes"],
                 "owner": table["owner"],
+                "owner_role_id": (
+                    kendo_role_name_key_map[table["owner"]]["ID"]
+                    if table["owner"]
+                    else None
+                ),
                 "retention_time": table["retention_time"],
-                "automatic_clustering": table["automatic_clustering"],
+                "automatic_clustering": (
+                    table["automatic_clustering"]
+                    if "automatic_clustering" in table
+                    else None
+                ),
                 "change_tracking": table["change_tracking"],
-                "search_optimization": table["search_optimization"],
-                "search_optimization_progress": table["search_optimization_progress"],
                 "is_external": table["is_external"],
                 "enable_schema_evolution": table["enable_schema_evolution"],
                 "owner_role_type": table["owner_role_type"],
@@ -631,12 +642,13 @@ def scan_tables(
                 "is_iceberg": table["is_iceberg"],
                 "is_dynamic": table["is_dynamic"],
                 "ddl": snowflake_ds.execute(
-                    f"SELECT GET_DDL('table', '{schema['DATABASE_NAME']}.{schema['NAME']}.{table['name']}') as DDL"
-                )[0]["DDL"],
+                    f"SELECT GET_DDL('table', '{schema['DATABASE_NAME']}.{schema['NAME']}.{table['name']}') as DDL"  # type: ignore
+                )[0]["DDL"],  # type: ignore
             }
             for table in tables_in_this_schema
         ]
         tables_in_sf.extend(tables_in_this_schema)
+
     if skipped_schemas:
         colored_print(
             "Tables could not be scanned from some schemas.",
@@ -702,20 +714,15 @@ def scan_tables(
                     "obj_created_on",
                     "name",
                     "schema_id",
-                    "schema_name",
-                    "database_id",
-                    "database_name",
                     "kind",
                     "comment",
                     "cluster_by",
-                    "rows",
-                    "bytes",
-                    "owner",
+                    "num_rows",
+                    "num_bytes",
+                    "owner_role_id",
                     "retention_time",
                     "automatic_clustering",
                     "change_tracking",
-                    "search_optimization",
-                    "search_optimization_progress",
                     "is_external",
                     "enable_schema_evolution",
                     "owner_role_type",
@@ -732,20 +739,15 @@ def scan_tables(
                     ("TIMESTAMP_LTZ", table["created_on"]),
                     table["name"],
                     table["schema_id"],
-                    table["schema_name"],
-                    table["database_id"],
-                    table["database_name"],
                     table["kind"],
                     table["comment"],
                     table["cluster_by"],
-                    table["rows"],
-                    table["bytes"],
-                    table["owner"],
+                    table["num_rows"],
+                    table["num_bytes"],
+                    table["owner_role_id"],
                     table["retention_time"],
                     table["automatic_clustering"],
                     table["change_tracking"],
-                    table["search_optimization"],
-                    table["search_optimization_progress"],
                     table["is_external"],
                     table["enable_schema_evolution"],
                     table["owner_role_type"],
