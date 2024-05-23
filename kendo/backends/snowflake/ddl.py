@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.table_objs (
     schema_id INT NOT NULL,
     FOREIGN KEY (schema_id) REFERENCES kendo_db.infrastructure.schema_objs(id)
 );
+CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.view_objs (
+    id INT PRIMARY KEY AUTOINCREMENT,
+    obj_created_on TIMESTAMP_LTZ NULL,
+    name VARCHAR NOT NULL,
+    schema_id INT NOT NULL,
+    FOREIGN KEY (schema_id) REFERENCES kendo_db.infrastructure.schema_objs(id)
+);
 CREATE TABLE IF NOT EXISTS kendo_db.infrastructure.stage_objs (
     id INT PRIMARY KEY AUTOINCREMENT,
     obj_created_on TIMESTAMP_LTZ NULL,
