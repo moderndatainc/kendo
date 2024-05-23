@@ -26,6 +26,37 @@ class TableObj(TypedDict):
     DATABASE_NAME: NotRequired[str]
 
 
+class StageObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
+class StreamObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    TABLE_NAME: NotRequired[str]
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
+class PipeObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    SCHEMA_ID: int
+    SCHEMA_NAME: NotRequired[str]
+    DATABASE_ID: NotRequired[int]
+    DATABASE_NAME: NotRequired[str]
+
+
 class ColumnObj(TypedDict):
     ID: int
     OBJ_CREATED_ON: NotRequired[datetime]
@@ -81,3 +112,13 @@ class RoleGrantObj(TypedDict):
     GRANTEE_NAME: NotRequired[str]
     GRANTED_BY_ROLE_ID: NotRequired[int]
     GRANTED_BY: NotRequired[str]
+
+
+class WarehouseObj(TypedDict):
+    ID: int
+    OBJ_CREATED_ON: NotRequired[datetime]
+    NAME: str
+    TYPE: str
+    SIZE: str
+    OWNER_ROLE_ID: NotRequired[int]
+    OWNER_ROLE_NAME: NotRequired[str]

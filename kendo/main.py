@@ -4,7 +4,7 @@ from typing_extensions import Annotated
 from typing import List, Optional
 from rich import print
 
-from kendo.schemas.enums import BackendProvider
+from kendo.schemas.enums import BackendProvider, Resources
 from .services.security_clearance import (
     show_session_details,
     show_missing_grants as show_missing_grants_service,
@@ -25,7 +25,6 @@ from .services.test import (
 )
 
 
-
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
@@ -34,23 +33,15 @@ def callback():
     pass
 
 
-# @app.command()
-# def develop():
-#     """
-#     Developer command.
-#     """
-#     print("Hello World!")
-
-
 @app.command()
-def configure(
+def init(
     backend_provider: Annotated[
         Optional[BackendProvider], typer.Option()
     ] = BackendProvider.snowflake,
     datasource_connection_name: Annotated[Optional[str], typer.Option()] = "default",
 ):
     """
-    Setup local config and backend database required for managing Access Control.
+    Setup local config backend required for managing Access Control.
     """
     assert backend_provider is not None
     assert datasource_connection_name is not None
@@ -88,24 +79,11 @@ def show_required_grants():
 
 
 @app.command()
-def scan(object_type: Annotated[str, typer.Argument()]):
+def scan(object_type: Annotated[Resources, typer.Argument()]):
     """
     Scan Snowflake infrastructure.
     """
-    allowed_object_types = [
-        "databases",
-        "schemas",
-        "tables",
-        "columns",
-        "users",
-        "roles",
-        "grants_to_roles",
-        "role_grants",
-        "all",
-    ]  # TODO: move to config
-
     assert object_type is not None
-    assert object_type in allowed_object_types
 
     scan_infra_service(object_type)
 

@@ -10,16 +10,20 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from kendo.datasource import SnowflakeDatasourceConnection
 from kendo.factory import Factory
 from kendo.schemas.common import ICaughtException
-from kendo.schemas.enums import BackendProvider
+from kendo.schemas.enums import BackendProvider, Resources
 from kendo.schemas.mapped_objs import (
     ColumnObj,
     DatabaseObj,
+    PipeObj,
     PrivilegeGrantObj,
     RoleGrantObj,
     RoleObj,
     SchemaObj,
+    StageObj,
+    StreamObj,
     TableObj,
     UserObj,
+    WarehouseObj,
 )
 from kendo.services.common import get_kendo_config_or_raise_error
 from kendo.utils.rich import colored_print
@@ -169,6 +173,88 @@ def _get_table_objs_in_kendo_with_id_key_map(
     return tables_in_kendo, kendo_table_id_key_map
 
 
+def _get_stage_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[StageObj], Dict[int, StageObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    stages_in_kendo = cast(
+        List[StageObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.stage_objs"
+            ).generate_statement()
+        ),
+    )
+    for stage in stages_in_kendo:
+        stage["SCHEMA_NAME"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]]["NAME"]
+        stage["DATABASE_ID"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]][
+            "DATABASE_ID"
+        ]
+        stage["DATABASE_NAME"] = kendo_schema_id_key_map[stage["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_stage_id_key_map: Dict[int, StageObj] = {
+        stage["ID"]: stage for stage in stages_in_kendo
+    }
+    return stages_in_kendo, kendo_stage_id_key_map
+
+
+def _get_stream_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[StreamObj], Dict[int, StreamObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    streams_in_kendo = cast(
+        List[StreamObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.stream_objs"
+            ).generate_statement()
+        ),
+    )
+    for stream in streams_in_kendo:
+        stream["SCHEMA_NAME"] = kendo_schema_id_key_map[stream["SCHEMA_ID"]]["NAME"]
+        stream["DATABASE_ID"] = kendo_schema_id_key_map[stream["SCHEMA_ID"]][
+            "DATABASE_ID"
+        ]
+        stream["DATABASE_NAME"] = kendo_schema_id_key_map[stream["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_streams_id_key_map: Dict[int, StreamObj] = {
+        stream["ID"]: stream for stream in streams_in_kendo
+    }
+    return streams_in_kendo, kendo_streams_id_key_map
+
+
+def _get_pipe_objs_in_kendo_with_id_key_map(
+    factory: Factory, kendo_schema_id_key_map=None
+) -> Tuple[List[PipeObj], Dict[int, PipeObj]]:
+    if not kendo_schema_id_key_map:
+        _, kendo_schema_id_key_map = _get_schema_objs_in_kendo_with_id_key_map(factory)
+    pipes_in_kendo = cast(
+        List[PipeObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.pipe_objs"
+            ).generate_statement()
+        ),
+    )
+    for pipe in pipes_in_kendo:
+        pipe["SCHEMA_NAME"] = kendo_schema_id_key_map[pipe["SCHEMA_ID"]]["NAME"]
+        pipe["DATABASE_ID"] = kendo_schema_id_key_map[pipe["SCHEMA_ID"]]["DATABASE_ID"]
+        pipe["DATABASE_NAME"] = kendo_schema_id_key_map[pipe["SCHEMA_ID"]][
+            "DATABASE_NAME"  # type: ignore
+        ]
+
+    kendo_pipes_id_key_map: Dict[int, PipeObj] = {
+        pipe["ID"]: pipe for pipe in pipes_in_kendo
+    }
+    return pipes_in_kendo, kendo_pipes_id_key_map
+
+
 def _get_column_objs_in_kendo_with_id_key_map(
     factory: Factory, kendo_table_id_key_map=None
 ) -> Tuple[List[ColumnObj], Dict[int, ColumnObj]]:
@@ -244,6 +330,33 @@ def _get_user_objs_in_kendo_with_key_maps(
         user["LOGIN_NAME"]: user for user in users_in_kendo
     }
     return users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map
+
+
+def _get_warehouse_objs_in_kendo_with_key_maps(
+    factory: Factory, kendo_role_id_key_map=None
+) -> Tuple[List[WarehouseObj], Dict[int, WarehouseObj], Dict[str, WarehouseObj]]:
+    if not kendo_role_id_key_map:
+        _, kendo_role_id_key_map, _ = _get_role_objs_in_kendo_with_key_maps(factory)
+    warehouses_in_kendo = cast(
+        List[WarehouseObj],
+        factory.backend_connection.execute(
+            factory.select(
+                table="kendo_db.infrastructure.warehouse_objs"
+            ).generate_statement()
+        ),
+    )
+    for warehouse in warehouses_in_kendo:
+        if warehouse["OWNER_ROLE_ID"]:  # type: ignore
+            warehouse["OWNER_ROLE_NAME"] = kendo_role_id_key_map[warehouse["OWNER_ROLE_ID"]][  # type: ignore
+                "NAME"
+            ]
+    kendo_warehouse_id_key_map: Dict[int, WarehouseObj] = {
+        warehouse["ID"]: warehouse for warehouse in warehouses_in_kendo
+    }
+    kendo_warehouse_name_key_map: Dict[str, WarehouseObj] = {
+        warehouse["NAME"]: warehouse for warehouse in warehouses_in_kendo
+    }
+    return warehouses_in_kendo, kendo_warehouse_id_key_map, kendo_warehouse_name_key_map
 
 
 def scan_databases(snowflake_ds: SnowflakeDatasourceConnection, factory: Factory):
@@ -919,6 +1032,116 @@ def scan_users(
     return users_in_kendo, kendo_user_id_key_map, kendo_user_login_name_key_map
 
 
+def scan_warehouses(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    kendo_role_id_key_map: Dict[int, RoleObj] | None = None,
+    kendo_role_name_key_map: Dict[str, RoleObj] | None = None,
+):
+    colored_print("Scanning warehouses...", level="info")
+    warehouses_in_sf = snowflake_ds.execute("show warehouses")
+    if not kendo_role_id_key_map or not kendo_role_name_key_map:
+        _, kendo_role_id_key_map, kendo_role_name_key_map = (
+            _get_role_objs_in_kendo_with_key_maps(factory)
+        )
+    assert isinstance(warehouses_in_sf, list)
+    warehouses_in_sf = [
+        {
+            "name": warehouse["name"],
+            "type": warehouse["type"],
+            "size": warehouse["size"],
+            "created_on": warehouse["created_on"],
+            "owner": warehouse["owner"],
+            "owner_role_id": (
+                kendo_role_name_key_map[warehouse["owner"]]["ID"]
+                if warehouse["owner"]
+                else None
+            ),
+        }
+        for warehouse in warehouses_in_sf
+    ]
+    warehouses_in_kendo, kendo_warehouse_id_key_map, kendo_warehouse_name_key_map = (
+        _get_warehouse_objs_in_kendo_with_key_maps(factory, kendo_role_id_key_map)
+    )
+    missing_warehouses = []
+    temp_list = [warehouse["name"] for warehouse in warehouses_in_sf]
+    for warehouse in warehouses_in_kendo:
+        if warehouse["NAME"] not in temp_list:
+            missing_warehouses.append(warehouse)
+    if missing_warehouses:
+        colored_print(
+            f"{len(missing_warehouses)} warehouses that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Warehouse mappings: ", level="info")
+            print(missing_warehouses)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_warehouses = []
+    temp_list = [warehouse["NAME"] for warehouse in warehouses_in_kendo]
+    for warehouse in warehouses_in_sf:
+        if warehouse["name"] not in temp_list:
+            new_warehouses.append(warehouse)
+    if new_warehouses:
+        colored_print(
+            f"{len(new_warehouses)} new warehouses detected since last scan.",
+            level="info",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Warehouses: ", level="info")
+            print(new_warehouses)
+        typer.confirm(
+            "Are you sure you want these new warehouses to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new warehouses...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.warehouse_objs",
+                columns=[
+                    "obj_created_on",
+                    "name",
+                    "type",
+                    "size",
+                    "owner_role_id",
+                ],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", warehouse["created_on"]),
+                    warehouse["name"],
+                    warehouse["type"],
+                    warehouse["size"],
+                    warehouse["owner_role_id"],
+                )
+                for warehouse in new_warehouses
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_warehouses)} new warehouses mapped successfully.",
+            level="success",
+        )
+        (
+            warehouses_in_kendo,
+            kendo_warehouse_id_key_map,
+            kendo_warehouse_name_key_map,
+        ) = _get_warehouse_objs_in_kendo_with_key_maps(factory, kendo_role_id_key_map)
+
+    return warehouses_in_kendo, kendo_warehouse_id_key_map, kendo_warehouse_name_key_map
+
+
 def scan_grants_to_roles(
     snowflake_ds: SnowflakeDatasourceConnection,
     factory: Factory,
@@ -1319,7 +1542,381 @@ def scan_role_grants(
         )
 
 
-def scan_infra(object_type):
+def scan_stages(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+):
+    colored_print("Scanning stages...", level="info")
+    stages_in_sf = []
+    skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
+    for schema in schemas_in_kendo:
+        stages_in_this_schema = snowflake_ds.execute(
+            f"show stages in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+            abort_on_exception=False,
+        )
+        if isinstance(stages_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+                    "type": "schema",
+                    "error": stages_in_this_schema.message,
+                }
+            )
+            continue
+        stages_in_this_schema = [
+            {
+                "name": stage["name"],
+                "created_on": stage["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
+            }
+            for stage in stages_in_this_schema
+        ]
+        stages_in_sf.extend(stages_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Stages could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding stages from these schemas?",
+            abort=True,
+        )
+
+    stages_in_kendo, kendo_stage_id_key_map = _get_stage_objs_in_kendo_with_id_key_map(
+        factory, kendo_schema_id_key_map
+    )
+
+    missing_stages = []
+    temp_list = [(stage["name"], stage["schema_id"]) for stage in stages_in_sf]
+    for stage in stages_in_kendo:
+        if (stage["NAME"], stage["SCHEMA_ID"]) not in temp_list:
+            missing_stages.append(stage)
+    if missing_stages:
+        colored_print(
+            f"{len(missing_stages)} stage(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Stage mappings: ", level="info")
+            print(missing_stages)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_stages = []
+    temp_list = [(stage["NAME"], stage["SCHEMA_ID"]) for stage in stages_in_kendo]
+    for stage in stages_in_sf:
+        if (stage["name"], stage["schema_id"]) not in temp_list:
+            new_stages.append(stage)
+    if new_stages:
+        colored_print(
+            f"{len(new_stages)} new stage(s) detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Stages: ", level="info")
+            print(new_stages)
+        typer.confirm(
+            "Are you sure you want these new stages to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new stages...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.stage_objs",
+                columns=["obj_created_on", "name", "schema_id"],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", stage["created_on"]),
+                    stage["name"],
+                    stage["schema_id"],
+                )
+                for stage in new_stages
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_stages)} new stage(s) mapped successfully.", level="success"
+        )
+        stages_in_kendo, kendo_stage_id_key_map = (
+            _get_stage_objs_in_kendo_with_id_key_map(factory, kendo_schema_id_key_map)
+        )
+
+    return stages_in_kendo, kendo_stage_id_key_map
+
+
+def scan_streams(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+):
+    colored_print("Scanning streams...", level="info")
+    streams_in_sf = []
+    skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
+    for schema in schemas_in_kendo:
+        streams_in_this_schema = snowflake_ds.execute(
+            f"show streams in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+            abort_on_exception=False,
+        )
+        if isinstance(streams_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+                    "type": "schema",
+                    "error": streams_in_this_schema.message,
+                }
+            )
+            continue
+        streams_in_this_schema = [
+            {
+                "name": stream["name"],
+                "table_name": stream["table_name"],
+                "created_on": stream["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
+            }
+            for stream in streams_in_this_schema
+        ]
+        streams_in_sf.extend(streams_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Streams could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding streams from these schemas?",
+            abort=True,
+        )
+
+    streams_in_kendo, kendo_stream_id_key_map = (
+        _get_stream_objs_in_kendo_with_id_key_map(factory, kendo_schema_id_key_map)
+    )
+
+    missing_streams = []
+    temp_list = [(stream["name"], stream["schema_id"]) for stream in streams_in_sf]
+    for stream in streams_in_kendo:
+        if (stream["NAME"], stream["SCHEMA_ID"]) not in temp_list:
+            missing_streams.append(stream)
+    if missing_streams:
+        colored_print(
+            f"{len(missing_streams)} stream(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Stream mappings: ", level="info")
+            print(missing_streams)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_streams = []
+    temp_list = [(stream["NAME"], stream["SCHEMA_ID"]) for stream in streams_in_kendo]
+    for stream in streams_in_sf:
+        if (stream["name"], stream["schema_id"]) not in temp_list:
+            new_streams.append(stream)
+    if new_streams:
+        colored_print(
+            f"{len(new_streams)} new stream(s) detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Streams: ", level="info")
+            print(new_streams)
+        typer.confirm(
+            "Are you sure you want these new streams to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new streams...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.stream_objs",
+                columns=["obj_created_on", "name", "table_name", "schema_id"],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", stream["created_on"]),
+                    stream["name"],
+                    stream["table_name"],
+                    stream["schema_id"],
+                )
+                for stream in new_streams
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_streams)} new stream(s) mapped successfully.", level="success"
+        )
+        streams_in_kendo, kendo_stream_id_key_map = (
+            _get_stream_objs_in_kendo_with_id_key_map(factory, kendo_schema_id_key_map)
+        )
+
+    return streams_in_kendo, kendo_stream_id_key_map
+
+
+def scan_pipes(
+    snowflake_ds: SnowflakeDatasourceConnection,
+    factory: Factory,
+    schemas_in_kendo: List[SchemaObj] | None = None,
+    kendo_schema_id_key_map: Dict[int, SchemaObj] | None = None,
+):
+    colored_print("Scanning pipes...", level="info")
+    pipes_in_sf = []
+    skipped_schemas = []
+    if not schemas_in_kendo or not kendo_schema_id_key_map:
+        schemas_in_kendo, kendo_schema_id_key_map = (
+            _get_schema_objs_in_kendo_with_id_key_map(factory)
+        )
+    for schema in schemas_in_kendo:
+        pipes_in_this_schema = snowflake_ds.execute(
+            f"show pipes in {schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+            abort_on_exception=False,
+        )
+        if isinstance(pipes_in_this_schema, ICaughtException):
+            skipped_schemas.append(
+                {
+                    "obj": f"{schema['DATABASE_NAME']}.{schema['NAME']}",  # type: ignore
+                    "type": "schema",
+                    "error": pipes_in_this_schema.message,
+                }
+            )
+            continue
+        pipes_in_this_schema = [
+            {
+                "name": pipe["name"],
+                "created_on": pipe["created_on"],
+                "schema_id": schema["ID"],
+                "schema_name": schema["NAME"],
+                "database_id": schema["DATABASE_ID"],
+                "database_name": schema["DATABASE_NAME"],  # type: ignore
+            }
+            for pipe in pipes_in_this_schema
+        ]
+        pipes_in_sf.extend(pipes_in_this_schema)
+    if skipped_schemas:
+        colored_print(
+            "Pipes could not be scanned from some schemas.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Skipped: ", level="info")
+            print(skipped_schemas)
+        typer.confirm(
+            "Do you want to proceed with mapping excluding pipes from these schemas?",
+            abort=True,
+        )
+
+    pipes_in_kendo, kendo_pipe_id_key_map = _get_pipe_objs_in_kendo_with_id_key_map(
+        factory, kendo_schema_id_key_map
+    )
+
+    missing_pipes = []
+    temp_list = [(pipe["name"], pipe["schema_id"]) for pipe in pipes_in_sf]
+    for pipe in pipes_in_kendo:
+        if (pipe["NAME"], pipe["SCHEMA_ID"]) not in temp_list:
+            missing_pipes.append(pipe)
+    if missing_pipes:
+        colored_print(
+            f"{len(missing_pipes)} pipe(s) that were mapped earlier could not be found.",
+            level="warning",
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("Missing Pipe mappings: ", level="info")
+            print(missing_pipes)
+        typer.confirm(
+            "Do you want to proceed without fixing these mappings yourself?",
+            abort=True,
+        )
+
+    new_pipes = []
+    temp_list = [(pipe["NAME"], pipe["SCHEMA_ID"]) for pipe in pipes_in_kendo]
+    for pipe in pipes_in_sf:
+        if (pipe["name"], pipe["schema_id"]) not in temp_list:
+            new_pipes.append(pipe)
+    if new_pipes:
+        colored_print(
+            f"{len(new_pipes)} new pipe(s) detected since last scan.", level="info"
+        )
+        confirm = typer.confirm("View?")
+        if confirm:
+            colored_print("New Pipes: ", level="info")
+            print(new_pipes)
+        typer.confirm(
+            "Are you sure you want these new pipes to be mapped?",
+            abort=True,
+        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            # transient=True,
+        ) as progress:
+            progress.add_task(description="Mapping new pipes...", total=None)
+            i_insert = factory.paramized_insert(
+                table="kendo_db.infrastructure.pipe_objs",
+                columns=["obj_created_on", "name", "schema_id"],
+            )
+            data = [
+                (
+                    ("TIMESTAMP_LTZ", pipe["created_on"]),
+                    pipe["name"],
+                    pipe["schema_id"],
+                )
+                for pipe in new_pipes
+            ]
+            factory.backend_connection.execute_many_times(
+                i_insert.generate_statement(), data
+            )
+        colored_print(
+            f"{len(new_pipes)} new pipe(s) mapped successfully.", level="success"
+        )
+        pipes_in_kendo, kendo_pipe_id_key_map = _get_pipe_objs_in_kendo_with_id_key_map(
+            factory, kendo_schema_id_key_map
+        )
+
+    return pipes_in_kendo, kendo_pipe_id_key_map
+
+
+def scan_infra(object_type: Resources):
     config_doc = get_kendo_config_or_raise_error()
     factory = Factory(config_doc)
     datasource_connection_name = config_doc["datasource"]["connection_name"]
@@ -1330,39 +1927,55 @@ def scan_infra(object_type):
 
     colored_print("Scanning Snowflake infrastructure...", level="info")
 
-    if object_type == "databases":
+    if object_type == Resources.databases:
         scan_databases(snowflake_ds, factory)
 
-    if object_type == "schemas":
+    if object_type == Resources.schemas:
         scan_schemas(snowflake_ds, factory)
 
-    if object_type == "tables":
+    if object_type == Resources.tables:
         scan_tables(snowflake_ds, factory)
 
-    if object_type == "columns":
+    if object_type == Resources.columns:
         scan_columns(snowflake_ds, factory)
 
-    if object_type == "roles":
+    if object_type == Resources.roles:
         scan_roles(snowflake_ds, factory)
 
-    if object_type == "users":
+    if object_type == Resources.users:
         scan_users(snowflake_ds, factory)
 
-    if object_type == "grants_to_roles":
+    if object_type == Resources.grants_to_roles:
         scan_grants_to_roles(snowflake_ds, factory)
 
-    if object_type == "role_grants":
+    if object_type == Resources.role_grants:
         scan_role_grants(snowflake_ds, factory)
 
-    if object_type == "all":
+    if object_type == Resources.warehouses:
+        scan_warehouses(snowflake_ds, factory)
+
+    if object_type == Resources.stages:
+        scan_stages(snowflake_ds, factory)
+
+    if object_type == Resources.streams:
+        scan_streams(snowflake_ds, factory)
+
+    if object_type == Resources.pipes:
+        scan_pipes(snowflake_ds, factory)
+
+    if object_type == Resources.all:
         scan_databases(snowflake_ds, factory)
         scan_schemas(snowflake_ds, factory)
         scan_tables(snowflake_ds, factory)
+        scan_stages(snowflake_ds, factory)
         scan_columns(snowflake_ds, factory)
         scan_roles(snowflake_ds, factory)
         scan_users(snowflake_ds, factory)
         scan_grants_to_roles(snowflake_ds, factory)
         scan_role_grants(snowflake_ds, factory)
+        scan_warehouses(snowflake_ds, factory)
+        scan_streams(snowflake_ds, factory)
+        scan_pipes(snowflake_ds, factory)
 
     snowflake_ds.close_session()
     factory.backend_connection.close_session()
