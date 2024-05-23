@@ -2,7 +2,7 @@
 
 Kendo is a testing framework designed for data infrastructure, allowing developers to define and enforce policies on their infrastructure using SQL code. Inspired by tools such as [Cloud Custodian](https://cloudcustodian.io) and [Steampipe](https://steampipe.io), Kendo enables infrastructure management through a declarative approach. 
 
-Kendo isn't a replacement for IaC tools like Terraform, Titan or schemachange, but is designed to work in conjunction with IaC  
+Kendo isn't a replacement for IaC tools currently used to manage Snowflake such as Terraform, Titan or schemachange, but is designed to work in conjunction with IaC tools. 
 
 ## Features
 
