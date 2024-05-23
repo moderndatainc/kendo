@@ -33,6 +33,7 @@ def load_yml_file(file):
 
 def list_tests():
     config = load_yml_file("sample/kendo.yml")
+    assert config is not None
     tests = config["tests"]
 
     return tests
@@ -40,6 +41,7 @@ def list_tests():
 
 def execute_tests(datasource_connection_name: str):
     config = load_yml_file("sample/kendo.yml")
+    assert config is not None
     tests = config["tests"]
 
     snowflake_ds = SnowflakeDatasourceConnection(datasource_connection_name)

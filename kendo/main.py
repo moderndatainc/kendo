@@ -11,6 +11,7 @@ from .services.security_clearance import (
     show_required_grants as show_required_grants_service,
 )
 from .services.configuration import (
+    clean_config_database,
     setup_config_database,
     scan_infra as scan_infra_service,
 )
@@ -19,10 +20,7 @@ from .services.tags import (
     show_tags as show_tags_service,
     set_tag as set_tag_service,
 )
-from .services.test import (
-    execute_tests,
-    list_tests
-)
+from .services.test import execute_tests, list_tests
 
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -46,6 +44,14 @@ def init(
     assert backend_provider is not None
     assert datasource_connection_name is not None
     setup_config_database(backend_provider, datasource_connection_name)
+
+
+@app.command()
+def clean():
+    """
+    Drop schemas from local config backend.
+    """
+    clean_config_database()
 
 
 @app.command()
@@ -87,19 +93,24 @@ def scan(object_type: Annotated[Resources, typer.Argument()]):
 
     scan_infra_service(object_type)
 
+
 @app.command()
-def test(cmd_type: Annotated[str, typer.Argument()], datasource_connection_name: Annotated[Optional[str], typer.Option()] = "default"):
+def test(
+    cmd_type: Annotated[str, typer.Argument()],
+    datasource_connection_name: Annotated[Optional[str], typer.Option()] = "default",
+):
     """
     Run tests.
     """
-    if cmd_type == 'list':
+    if cmd_type == "list":
         tests = list_tests()
         for test in tests:
             print(test)
 
-    if cmd_type == 'run':
+    if cmd_type == "run":
+        assert datasource_connection_name is not None
         execute_tests(datasource_connection_name)
-    
+
 
 @app.command()
 def create_tag(
