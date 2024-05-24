@@ -109,6 +109,18 @@ def setup_config_database(
     factory.backend_connection.close_session()
 
 
+def clean_config_database():
+    config_doc = get_kendo_config_or_raise_error()
+    factory = Factory(config_doc)
+    if config_doc["backend"]["provider"] == BackendProvider.snowflake:
+        factory.backend_connection.execute("USE ROLE SYSADMIN;")
+
+    factory.backend_connection.execute("DROP SCHEMA IF EXISTS kendo_db.config;")
+    factory.backend_connection.execute("DROP SCHEMA IF EXISTS kendo_db.infrastructure;")
+
+    factory.backend_connection.close_session()
+
+
 def _get_db_objs_in_kendo_with_id_key_map(
     factory: Factory,
 ) -> Tuple[List[DatabaseObj], Dict[int, DatabaseObj]]:
@@ -2085,7 +2097,7 @@ def scan_infra(object_type: Resources):
 
     if object_type == Resources.tables:
         scan_tables(snowflake_ds, factory)
-    
+
     if object_type == Resources.views:
         scan_views(snowflake_ds, factory)
 
